@@ -48,6 +48,12 @@ const ultrasonicReadingSchema = z.object({
   pumpMode: z.enum(["AUTO", "MANUAL"]).optional(),
   sensorStatus: z.string().optional(),
   failedSensor: z.string().optional(),
+  // Optional YF-S201 flow telemetry. The current firmware does not send these.
+  // They are accepted when present and must never be required, otherwise every
+  // ultrasonic-only reading would be rejected with a 400.
+  flowRateLMin: z.number().finite().min(0).optional(),
+  sessionVolumeLiters: z.number().finite().min(0).optional(),
+  flowStatus: z.string().optional(),
   // Single-tank backward compatibility fields:
   distanceCm: z.number().finite().min(0).max(400).optional(),
   percentage: z.number().finite().min(0).max(100).optional(),
@@ -67,8 +73,29 @@ const deviceReadingLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+/**
+ * Traces every device request end to end so a silent drop (401, 400, 429)
+ * is visible in the backend console instead of only on the ESP32 serial.
+ * Logs no secret values.
+ */
+function traceDeviceRequest(req, res, next) {
+  const startedAt = Date.now();
+
+  res.on("finish", () => {
+    console.log(
+      `[Telemetry] ${req.method} ${req.originalUrl} ` +
+      `from=${req.ip} device=${req.body?.deviceId ?? "unknown"} ` +
+      `key=${req.get("x-device-key") ? "present" : "missing"} ` +
+      `-> ${res.statusCode} (${Date.now() - startedAt} ms)`
+    );
+  });
+
+  next();
+}
+
 router.post(
   "/ultrasonic",
+  traceDeviceRequest,
   deviceReadingLimiter,
   authenticateDevice,
   validateRequest(ultrasonicReadingSchema),

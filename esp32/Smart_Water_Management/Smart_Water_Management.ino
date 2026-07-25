@@ -6,8 +6,22 @@
 // Backend configuration
 // =====================================
 
-const char* SERVER_URL =
-  "http://192.168.1.192:5000/api/sensors/ultrasonic";
+// Laptop Wi-Fi IPv4 address running the Express backend.
+// Must be the LAN IP of the machine, never localhost / 127.0.0.1.
+// Re-check with "ipconfig" whenever the laptop rejoins the hotspot,
+// because DHCP can hand out a different address.
+#define SERVER_HOST "10.231.71.157"
+#define SERVER_PORT "5000"
+
+// Built from the parts above so the two endpoints can never drift apart
+// and no stray character can sneak into the scheme.
+#define SERVER_BASE_URL "http://" SERVER_HOST ":" SERVER_PORT
+
+const char* SERVER_URL = SERVER_BASE_URL "/api/sensors/ultrasonic";
+const char* CONTROL_URL = SERVER_BASE_URL "/api/device/control";
+
+// Fail fast instead of stalling the pump loop on an unreachable backend.
+const uint16_t HTTP_TIMEOUT_MS = 5000;
 
 const char* DEVICE_ID = "tank-01";
 
@@ -155,8 +169,13 @@ void setup() {
   Serial.println();
   Serial.println("=================================");
   Serial.println("Smart Water Management Started");
+  Serial.print("Device ID: ");
+  Serial.println(DEVICE_ID);
+  Serial.print("Backend: ");
+  Serial.println(SERVER_URL);
   Serial.println("Upper tank: TRIG 7, ECHO 15");
   Serial.println("Lower tank: TRIG 12, ECHO 13");
+  Serial.println("Pump relay: GPIO 4");
   Serial.println("=================================");
 }
 
@@ -298,10 +317,27 @@ void connectWiFi() {
   Serial.println();
 
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.print("Connected. ESP32 IP: ");
+    Serial.print("Wi-Fi connected to SSID: ");
+    Serial.println(WIFI_SSID);
+
+    Serial.print("ESP32 IP: ");
     Serial.println(WiFi.localIP());
+
+    Serial.print("Gateway: ");
+    Serial.println(WiFi.gatewayIP());
+
+    Serial.print("RSSI: ");
+    Serial.print(WiFi.RSSI());
+    Serial.println(" dBm");
+
+    Serial.print("Backend telemetry URL: ");
+    Serial.println(SERVER_URL);
+
+    Serial.print("Backend control URL: ");
+    Serial.println(CONTROL_URL);
   } else {
-    Serial.println("Wi-Fi connection failed");
+    Serial.print("Wi-Fi connection FAILED. status=");
+    Serial.println(WiFi.status());
   }
 }
 
@@ -316,14 +352,14 @@ void fetchDeviceControlState() {
 
   HTTPClient http;
 
-  String url = String(SERVER_URL);
+  if (!http.begin(CONTROL_URL)) {
+    Serial.print("Control begin() FAILED for URL: ");
+    Serial.println(CONTROL_URL);
+    return;
+  }
 
-  url.replace(
-    "/api/sensors/ultrasonic",
-    "/api/device/control"
-  );
-
-  http.begin(url);
+  http.setConnectTimeout(HTTP_TIMEOUT_MS);
+  http.setTimeout(HTTP_TIMEOUT_MS);
   http.addHeader("x-device-key", DEVICE_API_KEY);
 
   int code = http.GET();
@@ -366,7 +402,16 @@ void fetchDeviceControlState() {
     Serial.println(manualPumpState);
   } else {
     Serial.print("Control HTTP error: ");
-    Serial.println(code);
+    Serial.print(code);
+    Serial.print(" (");
+    Serial.print(http.errorToString(code));
+    Serial.print(") URL: ");
+    Serial.println(CONTROL_URL);
+
+    if (code > 0) {
+      Serial.print("Control response body: ");
+      Serial.println(http.getString());
+    }
   }
 
   http.end();
@@ -629,12 +674,23 @@ int sendReading(
   const String& lowerStatus
 ) {
   if (WiFi.status() != WL_CONNECTED) {
+    Serial.println(
+      "Skipping POST: Wi-Fi not connected"
+    );
     return -1;
   }
 
   HTTPClient http;
 
-  http.begin(SERVER_URL);
+  if (!http.begin(SERVER_URL)) {
+    Serial.print("POST begin() FAILED for URL: ");
+    Serial.println(SERVER_URL);
+    return -1;
+  }
+
+  http.setConnectTimeout(HTTP_TIMEOUT_MS);
+  http.setTimeout(HTTP_TIMEOUT_MS);
+
   http.addHeader(
     "Content-Type",
     "application/json"
@@ -701,14 +757,34 @@ int sendReading(
 
   json += "}";
 
+  Serial.print("POST URL: ");
+  Serial.println(SERVER_URL);
+
+  Serial.print("Payload: ");
+  Serial.println(json);
+
   int responseCode = http.POST(json);
 
   Serial.print("Sensor POST response: ");
   Serial.println(responseCode);
 
   if (responseCode < 200 || responseCode >= 300) {
-    Serial.print("Backend response: ");
-    Serial.println(http.getString());
+    Serial.print("HTTP error: ");
+    Serial.println(http.errorToString(responseCode));
+
+    // A negative code means the request never reached the backend,
+    // so there is no body to read.
+    if (responseCode > 0) {
+      Serial.print("Backend response: ");
+      Serial.println(http.getString());
+    }
+
+    Serial.print("Wi-Fi status: ");
+    Serial.print(WiFi.status());
+    Serial.print(" | RSSI: ");
+    Serial.print(WiFi.RSSI());
+    Serial.print(" dBm | ESP32 IP: ");
+    Serial.println(WiFi.localIP());
   }
 
   http.end();
@@ -729,7 +805,14 @@ void sendSensorError(
 
   HTTPClient http;
 
-  http.begin(SERVER_URL);
+  if (!http.begin(SERVER_URL)) {
+    Serial.print("Sensor-error begin() FAILED for URL: ");
+    Serial.println(SERVER_URL);
+    return;
+  }
+
+  http.setConnectTimeout(HTTP_TIMEOUT_MS);
+  http.setTimeout(HTTP_TIMEOUT_MS);
 
   http.addHeader(
     "Content-Type",
@@ -756,7 +839,11 @@ void sendSensorError(
 
   json += "}";
 
-  http.POST(json);
+  int responseCode = http.POST(json);
+
+  Serial.print("Sensor-error POST response: ");
+  Serial.println(responseCode);
+
   http.end();
 }
 

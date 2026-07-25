@@ -8,18 +8,15 @@ export function receiveUltrasonicReading(req, res) {
   const reading = saveLatestReading(req.body);
   emitUltrasonicReading(reading);
 
-  const upperStr = reading.upperTank
-    ? `Upper: ${reading.upperTank.percentage.toFixed(1)}% (${reading.upperTank.distanceCm.toFixed(1)} cm)`
-    : "";
-  const lowerStr = reading.lowerTank
-    ? `Lower: ${reading.lowerTank.percentage.toFixed(1)}% (${reading.lowerTank.distanceCm.toFixed(1)} cm)`
-    : "";
+  const upperStr = `Upper: ${reading.upperTank.percentage.toFixed(1)}% (${reading.upperTank.distanceCm.toFixed(1)} cm)`;
+  const lowerStr = `Lower: ${reading.lowerTank.percentage.toFixed(1)}% (${reading.lowerTank.distanceCm.toFixed(1)} cm)`;
 
   console.log(
     `[Ultrasonic] ${reading.deviceId}: ${upperStr} | ${lowerStr} | Pump: ${reading.pumpStatus} at ${reading.receivedAt}`
   );
 
   res.status(200).json({
+    success: true,
     message: "Ultrasonic reading received.",
     ...reading,
   });
@@ -30,6 +27,7 @@ export function getLatestUltrasonicReading(req, res) {
 
   if (!reading) {
     return res.status(200).json({
+      success: true,
       message: "No ultrasonic reading has been received yet.",
       reading: null,
     });

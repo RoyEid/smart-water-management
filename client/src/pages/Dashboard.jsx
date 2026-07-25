@@ -2,26 +2,18 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Activity,
-  AlertTriangle,
-  CheckCircle2,
-  Cpu,
   Droplets,
-  Gauge,
   Info,
   Radio,
   RotateCw,
   Ruler,
   ShieldCheck,
-  Sliders,
   Waves,
-  Wifi,
-  Zap,
 } from "lucide-react";
 import AlertsPanel from "../components/dashboard/AlertsPanel";
 import AutoControlReasonCard from "../components/dashboard/AutoControlReasonCard";
 import DeviceControlPanel from "../components/dashboard/DeviceControlPanel";
 import MetricCard from "../components/dashboard/MetricCard";
-import SystemStatus from "../components/dashboard/SystemStatus";
 import TankVisual from "../components/dashboard/TankVisual";
 import WaterLevelChart from "../components/dashboard/WaterLevelChart";
 import WaterTransferVisual from "../components/dashboard/WaterTransferVisual";
@@ -32,14 +24,6 @@ import useTankData from "../hooks/useTankData";
 import api from "../services/api";
 import SettingsPage from "./SettingsPage";
 import { useLanguage } from "../context/LanguageContext";
-
-const MOCK_SYSTEM_DATA = {
-  flowRate: "0.0 L/min",
-  totalTransferred: "0 L",
-  electricitySource: "Mains",
-  voltage: "220 V",
-  current: "0.0 A",
-};
 
 export default function Dashboard() {
   const { reading, readings, isOnline, error, unauthorized } = useTankData();

@@ -35,8 +35,13 @@ export function attachSocketServer(httpServer) {
 }
 
 export function emitUltrasonicReading(reading) {
+  // A missing Socket.IO server must not turn a valid device reading into a
+  // 500 for the ESP32 — the reading is already stored either way.
   if (!io) {
-    throw new Error("Socket.IO server has not been attached to the HTTP server.");
+    console.error(
+      "[Socket.IO] Cannot broadcast reading: server was never attached to the HTTP server."
+    );
+    return;
   }
 
   io.emit("ultrasonic:update", reading);
@@ -44,7 +49,10 @@ export function emitUltrasonicReading(reading) {
 
 export function emitDeviceControlChanged(controlState) {
   if (!io) {
-    throw new Error("Socket.IO server has not been attached to the HTTP server.");
+    console.error(
+      "[Socket.IO] Cannot broadcast control state: server was never attached to the HTTP server."
+    );
+    return;
   }
 
   io.emit("control:update", controlState);

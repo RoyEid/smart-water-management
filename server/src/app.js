@@ -1,7 +1,9 @@
 import express from "express";
+import mongoose from "mongoose";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
+import { getSocketServer } from "./realtime/socketServer.js";
 import authRoutes from "./routes/authRoutes.js";
 import sensorRoutes from "./routes/sensorRoutes.js";
 import deviceControlRoutes from "./routes/deviceControlRoutes.js";
@@ -68,8 +70,15 @@ app.use(passport.initialize());
 
 // Routes
 app.get("/api/health", (req, res) => {
+  // readyState 1 === connected
+  const databaseConnected = mongoose.connection.readyState === 1;
+  const socketReady = Boolean(getSocketServer());
+
   res.status(200).json({
+    success: true,
     status: "ok",
+    databaseConnected,
+    socketReady,
     timestamp: new Date().toISOString(),
   });
 });
