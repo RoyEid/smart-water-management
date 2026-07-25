@@ -1,0 +1,10 @@
+Upper tank:
+TRIG → GPIO 7
+ECHO → GPIO 15
+
+Lower tank:
+TRIG → GPIO 12
+ECHO → GPIO 13
+
+Relay:
+IN → GPIO 4

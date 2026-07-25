@@ -18,11 +18,13 @@ import {
   Zap,
 } from "lucide-react";
 import AlertsPanel from "../components/dashboard/AlertsPanel";
+import AutoControlReasonCard from "../components/dashboard/AutoControlReasonCard";
 import DeviceControlPanel from "../components/dashboard/DeviceControlPanel";
 import MetricCard from "../components/dashboard/MetricCard";
 import SystemStatus from "../components/dashboard/SystemStatus";
 import TankVisual from "../components/dashboard/TankVisual";
 import WaterLevelChart from "../components/dashboard/WaterLevelChart";
+import WaterTransferVisual from "../components/dashboard/WaterTransferVisual";
 import Sidebar from "../components/layout/Sidebar";
 import TopHeader from "../components/layout/TopHeader";
 import useDeviceControl from "../hooks/useDeviceControl";
@@ -32,14 +34,11 @@ import SettingsPage from "./SettingsPage";
 import { useLanguage } from "../context/LanguageContext";
 
 const MOCK_SYSTEM_DATA = {
-  pumpStatus: "Standby",
-  operatingMode: "Automatic",
   flowRate: "0.0 L/min",
   totalTransferred: "0 L",
   electricitySource: "Mains",
   voltage: "220 V",
   current: "0.0 A",
-  lowerTankLevel: "-- %",
 };
 
 export default function Dashboard() {
@@ -92,8 +91,20 @@ export default function Dashboard() {
   const lastUpdated = reading?.receivedAt
     ? new Date(reading.receivedAt).toLocaleTimeString()
     : t("awaitingData");
-  const value = (key, fallback = "--") => (reading ? reading[key] : fallback);
-  const tankStatus = reading?.tankStatus || "Offline";
+
+  const upperTank = reading?.upperTank || {
+    percentage: 0,
+    distanceCm: 0,
+    waterHeightCm: 0,
+    tankStatus: "Offline",
+  };
+
+  const lowerTank = reading?.lowerTank || {
+    percentage: 0,
+    distanceCm: 0,
+    waterHeightCm: 0,
+    tankStatus: "Offline",
+  };
 
   const logout = async () => {
     setLoggingOut(true);
@@ -115,7 +126,7 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-slate-50/60 dark:bg-slate-950 text-slate-900 dark:text-slate-100 selection:bg-blue-600 selection:text-white transition-colors duration-300">
-      {/* Toast Notification for Future Features */}
+      {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-5 right-5 z-50 flex items-center gap-3 rounded-2xl border border-sky-200 dark:border-sky-800 bg-sky-900 dark:bg-sky-950 px-4 py-3 text-xs font-bold text-white shadow-2xl animate-bounce">
           <Info size={16} className="text-cyan-300" aria-hidden="true" />
@@ -123,7 +134,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Responsive IoT Navigation Sidebar */}
+      {/* Navigation Sidebar */}
       <Sidebar
         activeTab={activeTab}
         onSelectTab={handleSelectTab}
@@ -168,7 +179,7 @@ export default function Dashboard() {
                     {t("realtimeOverview")}
                   </p>
                   <h2 className="mt-0.5 text-2xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100 sm:text-3xl">
-                    {t("waterTankCenterpiece")}
+                    Dual Tank Telemetry System
                   </h2>
                 </div>
                 <p className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 px-3.5 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 shadow-sm">
@@ -177,172 +188,97 @@ export default function Dashboard() {
                 </p>
               </div>
 
-              {/* Upper Layout: Tank Centerpiece + Metric Grid */}
-              <section className="grid gap-6 lg:grid-cols-[minmax(340px,0.95fr)_minmax(0,1.55fr)]">
-                <TankVisual
-                  percentage={value("percentage", 0)}
-                  status={value("tankStatus", "Waiting for sensor")}
-                  pumpStatus={reading?.pumpStatus}
-                />
-
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  <MetricCard
-                    icon={Droplets}
-                    label="Water level"
-                    value={Number(value("percentage", 0)).toFixed(1)}
-                    unit="%"
-                    detail="Ultrasonic volume calculation"
-                    accent="cyan"
-                  />
-                  <MetricCard
-                    icon={Ruler}
-                    label="Sensor distance"
-                    value={reading ? reading.distanceCm.toFixed(1) : "--"}
-                    unit="cm"
-                    detail="Transducer to surface"
-                    accent="blue"
-                  />
-                  <MetricCard
-                    icon={Waves}
-                    label="Water height"
-                    value={reading ? reading.waterHeightCm.toFixed(1) : "--"}
-                    unit="cm"
-                    detail="Tank usable column height"
-                    accent="indigo"
-                  />
-
-                  <SystemStatus
+              {/* Dual Tank Visualization Grid: Side-by-side on Desktop, Stacked on Mobile */}
+              <section className="space-y-4">
+                <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
+                  <TankVisual
+                    title="Upper Tank"
+                    subtitle="TRIG GPIO 7 / ECHO GPIO 15"
+                    percentage={upperTank.percentage}
+                    distanceCm={upperTank.distanceCm}
+                    waterHeightCm={upperTank.waterHeightCm}
+                    status={upperTank.tankStatus}
+                    pumpStatus={reading?.pumpStatus}
                     isOnline={isOnline}
                     lastUpdated={lastUpdated}
-                    className="sm:col-span-2 xl:col-span-1"
+                    accent="cyan"
                   />
 
-                  {/* Tank Status Card */}
-                  <article className="group rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 p-5 shadow-sm shadow-slate-900/5 transition duration-300 hover:-translate-y-1 hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-xl hover:shadow-slate-900/10">
-                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Tank status</p>
-                    <p
-                      className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-extrabold ring-1 ${
-                        tankStatus === "Empty" || tankStatus === "Low"
-                          ? "bg-amber-50 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 ring-amber-200/80 dark:ring-amber-800"
-                          : tankStatus === "Full" || tankStatus === "High"
-                          ? "bg-cyan-50 dark:bg-cyan-950/80 text-cyan-800 dark:text-cyan-300 ring-cyan-200/80 dark:ring-cyan-800"
-                          : isOnline
-                          ? "bg-emerald-50 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 ring-emerald-200/80 dark:ring-emerald-800"
-                          : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 ring-slate-200 dark:ring-slate-700"
-                      }`}
-                    >
-                      {tankStatus}
-                    </p>
-                    <div className="mt-4 border-t border-slate-100/80 dark:border-slate-800/80 pt-3 text-[11px] font-semibold text-slate-400 dark:text-slate-500">
-                      Reported by tank-01
-                    </div>
-                  </article>
-
-                  {/* Dedicated Water Pump Card */}
-                  <article className="group rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 p-5 shadow-sm shadow-slate-900/5 transition duration-300 hover:-translate-y-1 hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-xl hover:shadow-slate-900/10">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Water pump</p>
-                      <span
-                        className={`rounded-xl p-2 transition-all duration-300 ${
-                          !isOnline
-                            ? "bg-rose-50 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400 ring-1 ring-rose-200/80 dark:ring-rose-800"
-                            : reading?.pumpStatus === "ON"
-                            ? "bg-emerald-50 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400 ring-1 ring-emerald-200/80 dark:ring-emerald-800 shadow-sm shadow-emerald-500/20"
-                            : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 ring-1 ring-slate-200 dark:ring-slate-700"
-                        }`}
-                      >
-                        <RotateCw
-                          size={18}
-                          aria-hidden="true"
-                          className={`transition-transform ${
-                            isOnline && reading?.pumpStatus === "ON"
-                              ? "animate-spin text-emerald-600 dark:text-emerald-400"
-                              : ""
-                          }`}
-                        />
-                      </span>
-                    </div>
-                    <div className="mt-3 flex items-center gap-2">
-                      <span
-                        className={`size-2.5 rounded-full ${
-                          !isOnline
-                            ? "bg-rose-500"
-                            : reading?.pumpStatus === "ON"
-                            ? "animate-pulse bg-emerald-500"
-                            : "bg-slate-400"
-                        }`}
-                      />
-                      <p
-                        className={`text-xl font-extrabold tracking-tight ${
-                          !isOnline
-                            ? "text-rose-700 dark:text-rose-400"
-                            : reading?.pumpStatus === "ON"
-                            ? "text-emerald-700 dark:text-emerald-400"
-                            : "text-slate-700 dark:text-slate-200"
-                        }`}
-                      >
-                        {!isOnline
-                          ? "Error (Offline)"
-                          : reading?.pumpStatus === "ON"
-                          ? "Running"
-                          : "Standby"}
-                      </p>
-                    </div>
-                    <div className="mt-4 border-t border-slate-100/80 dark:border-slate-800/80 pt-3 text-[11px] font-semibold text-slate-400 dark:text-slate-500">
-                      {!isOnline
-                        ? "Communication error"
-                        : reading?.pumpStatus === "ON"
-                        ? "Actively pumping water"
-                        : controlState.pumpMode === "MANUAL"
-                        ? "Manual mode idle"
-                        : "Automatic relay mode"}
-                    </div>
-                  </article>
+                  <TankVisual
+                    title="Lower Tank"
+                    subtitle="TRIG GPIO 12 / ECHO GPIO 13"
+                    percentage={lowerTank.percentage}
+                    distanceCm={lowerTank.distanceCm}
+                    waterHeightCm={lowerTank.waterHeightCm}
+                    status={lowerTank.tankStatus}
+                    pumpStatus={reading?.pumpStatus}
+                    isOnline={isOnline}
+                    lastUpdated={lastUpdated}
+                    accent="indigo"
+                  />
                 </div>
+
+                {/* Water Transfer Visualization with Single Pump & Animated Pipe */}
+                <WaterTransferVisual
+                  pumpStatus={reading?.pumpStatus || "OFF"}
+                  pumpMode={controlState.pumpMode || reading?.pumpMode || "AUTO"}
+                  isOnline={isOnline}
+                />
               </section>
 
-              {/* Middle Section: Chart & System Notices */}
-              <section className="grid gap-6 lg:grid-cols-3">
-                <div className="min-w-0 lg:col-span-2">
-                  <WaterLevelChart readings={readings} />
-                </div>
-                <AlertsPanel reading={reading} isOnline={isOnline} />
+              {/* Auto Control Information Card & Safety Alerts */}
+              <section className="grid gap-6 grid-cols-1 lg:grid-cols-2">
+                <AutoControlReasonCard
+                  reading={reading}
+                  controlState={controlState}
+                  isOnline={isOnline}
+                />
+                <AlertsPanel
+                  reading={reading}
+                  isOnline={isOnline}
+                  backendError={error}
+                />
               </section>
 
-              {/* Supplementary Grid */}
-              <section
-                aria-label="Supplementary system metrics"
-                className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
-              >
+              {/* Metric Cards Grid */}
+              <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <MetricCard
-                  icon={Gauge}
-                  label="Total transferred"
-                  value={MOCK_SYSTEM_DATA.totalTransferred}
-                  detail="Flow calculation parameter"
-                  accent="violet"
-                />
-                <MetricCard
-                  icon={Zap}
-                  label="Electricity source"
-                  value={MOCK_SYSTEM_DATA.electricitySource}
-                  detail="Power grid Status"
-                  accent="amber"
-                />
-                <MetricCard
-                  icon={Zap}
-                  label="Voltage / Current"
-                  value={MOCK_SYSTEM_DATA.voltage}
-                  unit={MOCK_SYSTEM_DATA.current}
-                  detail="Electrical telemetry"
-                  accent="amber"
+                  icon={Droplets}
+                  label="Upper Tank Level"
+                  value={upperTank.percentage.toFixed(1)}
+                  unit="%"
+                  detail="Destination Reservoir"
+                  accent="cyan"
                 />
                 <MetricCard
                   icon={Waves}
-                  label="Lower tank level"
-                  value={MOCK_SYSTEM_DATA.lowerTankLevel}
-                  detail="Secondary reservoir"
+                  label="Lower Tank Level"
+                  value={lowerTank.percentage.toFixed(1)}
+                  unit="%"
+                  detail="Source Reservoir"
+                  accent="indigo"
+                />
+                <MetricCard
+                  icon={Ruler}
+                  label="Upper Distance"
+                  value={upperTank.distanceCm.toFixed(1)}
+                  unit="cm"
+                  detail="Sensor to surface"
                   accent="blue"
                 />
+                <MetricCard
+                  icon={Ruler}
+                  label="Lower Distance"
+                  value={lowerTank.distanceCm.toFixed(1)}
+                  unit="cm"
+                  detail="Sensor to surface"
+                  accent="blue"
+                />
+              </section>
+
+              {/* Multi-Series Telemetry Chart */}
+              <section>
+                <WaterLevelChart readings={readings} />
               </section>
             </div>
           )}
@@ -392,7 +328,9 @@ export default function Dashboard() {
                         <RotateCw
                           size={18}
                           className={
-                            reading?.pumpStatus === "ON" ? "animate-spin text-emerald-600 dark:text-emerald-400" : ""
+                            reading?.pumpStatus === "ON"
+                              ? "animate-spin text-emerald-600 dark:text-emerald-400"
+                              : ""
                           }
                         />
                       </span>
@@ -436,15 +374,15 @@ export default function Dashboard() {
                     <ul className="mt-3 space-y-2 text-xs font-semibold text-amber-900/90 dark:text-amber-300/90 leading-relaxed">
                       <li className="flex items-start gap-2">
                         <span className="font-bold">•</span>
-                        Disabling the System immediately forces the Pump OFF.
+                        Disabling System immediately stops the Pump.
                       </li>
                       <li className="flex items-start gap-2">
                         <span className="font-bold">•</span>
-                        If ultrasonic echo fails or times out, the ESP32 safety loop halts the pump.
+                        Lower Tank ≤ 10% blocks pump (Dry-run protection).
                       </li>
                       <li className="flex items-start gap-2">
                         <span className="font-bold">•</span>
-                        In AUTO mode, pump starts at $\le 20\%$ level and stops at $\ge 90\%$.
+                        AUTO mode starts at Upper ≤ 20% & Lower ≥ 20%, stops at Upper ≥ 90%.
                       </li>
                     </ul>
                   </article>
@@ -462,7 +400,7 @@ export default function Dashboard() {
                     Telemetry Stream
                   </p>
                   <h2 className="mt-0.5 text-2xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100 sm:text-3xl">
-                    Live Hardware Diagnostics
+                    Live Dual Hardware Diagnostics
                   </h2>
                 </div>
                 <p className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 px-3.5 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 shadow-sm">
@@ -475,38 +413,39 @@ export default function Dashboard() {
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <MetricCard
                   icon={Radio}
-                  label="Distance to water"
-                  value={reading ? reading.distanceCm.toFixed(1) : "--"}
+                  label="Upper Distance"
+                  value={upperTank.distanceCm.toFixed(1)}
                   unit="cm"
-                  detail="Raw ultrasonic echo distance"
+                  detail="TRIG 7 / ECHO 15"
+                  accent="cyan"
+                />
+                <MetricCard
+                  icon={Radio}
+                  label="Lower Distance"
+                  value={lowerTank.distanceCm.toFixed(1)}
+                  unit="cm"
+                  detail="TRIG 12 / ECHO 13"
+                  accent="indigo"
+                />
+                <MetricCard
+                  icon={Droplets}
+                  label="Upper Level"
+                  value={upperTank.percentage.toFixed(1)}
+                  unit="%"
+                  detail="Capacity Percentage"
                   accent="cyan"
                 />
                 <MetricCard
                   icon={Waves}
-                  label="Water column height"
-                  value={reading ? reading.waterHeightCm.toFixed(1) : "--"}
-                  unit="cm"
-                  detail="Usable tank water height"
-                  accent="blue"
-                />
-                <MetricCard
-                  icon={Droplets}
-                  label="Calculated level"
-                  value={Number(value("percentage", 0)).toFixed(1)}
+                  label="Lower Level"
+                  value={lowerTank.percentage.toFixed(1)}
                   unit="%"
-                  detail="Tank capacity percentage"
+                  detail="Capacity Percentage"
                   accent="indigo"
-                />
-                <MetricCard
-                  icon={Cpu}
-                  label="ESP32 Controller"
-                  value={isOnline ? "ONLINE" : "OFFLINE"}
-                  detail="Wi-Fi link to Express API"
-                  accent={isOnline ? "emerald" : "amber"}
                 />
               </div>
 
-              {/* Live Readings Chart */}
+              {/* Live Multi-Series Chart */}
               <WaterLevelChart readings={readings} />
             </div>
           )}

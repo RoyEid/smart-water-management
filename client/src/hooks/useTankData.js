@@ -7,14 +7,65 @@ import { fetchLatestUltrasonicReading } from "../services/sensorApi";
 
 const ONLINE_WINDOW_MS = 10_000;
 
+function isTankObj(obj) {
+  return (
+    obj &&
+    typeof obj === "object" &&
+    typeof obj.distanceCm === "number" &&
+    Number.isFinite(obj.distanceCm) &&
+    typeof obj.percentage === "number" &&
+    Number.isFinite(obj.percentage) &&
+    typeof obj.waterHeightCm === "number" &&
+    Number.isFinite(obj.waterHeightCm) &&
+    typeof obj.tankStatus === "string"
+  );
+}
+
 function isReading(value) {
-  return value && typeof value.deviceId === "string" &&
-    ["distanceCm", "percentage", "waterHeightCm"].every(
-      (key) => typeof value[key] === "number" && Number.isFinite(value[key])
-    ) &&
-    typeof value.tankStatus === "string" &&
-    typeof value.pumpStatus === "string" &&
-    !Number.isNaN(Date.parse(value.receivedAt));
+  if (!value || typeof value.deviceId !== "string") return false;
+  if (Number.isNaN(Date.parse(value.receivedAt))) return false;
+
+  if (value.upperTank || value.lowerTank) {
+    return (
+      (!value.upperTank || isTankObj(value.upperTank)) &&
+      (!value.lowerTank || isTankObj(value.lowerTank))
+    );
+  }
+
+  return (
+    typeof value.distanceCm === "number" &&
+    Number.isFinite(value.distanceCm) &&
+    typeof value.percentage === "number" &&
+    Number.isFinite(value.percentage) &&
+    typeof value.waterHeightCm === "number" &&
+    Number.isFinite(value.waterHeightCm) &&
+    typeof value.tankStatus === "string"
+  );
+}
+
+function normalizeReading(value) {
+  if (!value) return null;
+  const upperTank = value.upperTank || {
+    distanceCm: value.distanceCm ?? 0,
+    percentage: value.percentage ?? 0,
+    waterHeightCm: value.waterHeightCm ?? 0,
+    tankStatus: value.tankStatus || "Normal",
+  };
+  const lowerTank = value.lowerTank || {
+    distanceCm: value.distanceCm ?? 0,
+    percentage: value.percentage ?? 0,
+    waterHeightCm: value.waterHeightCm ?? 0,
+    tankStatus: value.tankStatus || "Normal",
+  };
+
+  return {
+    ...value,
+    upperTank,
+    lowerTank,
+    pumpStatus: value.pumpStatus || "OFF",
+    systemEnabled: value.systemEnabled ?? true,
+    pumpMode: value.pumpMode || "AUTO",
+  };
 }
 
 export default function useTankData() {
@@ -32,8 +83,9 @@ export default function useTankData() {
       const timestamp = Date.parse(next?.receivedAt);
       if (!isReading(next) || timestamp < newest) return;
       newest = timestamp;
-      setReading(next);
-      setReadings((current) => [...current, next].slice(-12));
+      const normalized = normalizeReading(next);
+      setReading(normalized);
+      setReadings((current) => [...current, normalized].slice(-20));
       setError("");
       setClock(Date.now());
     };
