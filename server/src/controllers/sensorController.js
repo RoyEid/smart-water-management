@@ -8,8 +8,15 @@ export function receiveUltrasonicReading(req, res) {
   const reading = saveLatestReading(req.body);
   emitUltrasonicReading(reading);
 
+  const upperStr = reading.upperTank
+    ? `Upper: ${reading.upperTank.percentage.toFixed(1)}% (${reading.upperTank.distanceCm.toFixed(1)} cm)`
+    : "";
+  const lowerStr = reading.lowerTank
+    ? `Lower: ${reading.lowerTank.percentage.toFixed(1)}% (${reading.lowerTank.distanceCm.toFixed(1)} cm)`
+    : "";
+
   console.log(
-    `[Ultrasonic] ${reading.deviceId}: ${reading.percentage.toFixed(1)}% (${reading.distanceCm.toFixed(1)} cm) | Tank: ${reading.tankStatus} | Pump: ${reading.pumpStatus} at ${reading.receivedAt}`
+    `[Ultrasonic] ${reading.deviceId}: ${upperStr} | ${lowerStr} | Pump: ${reading.pumpStatus} at ${reading.receivedAt}`
   );
 
   res.status(200).json({

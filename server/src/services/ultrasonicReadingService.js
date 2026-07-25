@@ -2,23 +2,73 @@ const ONLINE_WINDOW_MS = 10_000;
 
 let latestReading = null;
 
-// Controllers depend on this service boundary rather than the storage detail,
-// so the in-memory implementation can later be replaced with MongoDB.
-export function saveLatestReading({
-  deviceId,
-  distanceCm,
-  percentage,
-  waterHeightCm,
-  tankStatus,
-  pumpStatus,
-}) {
-  latestReading = {
-    deviceId,
+export function saveLatestReading(payload) {
+  const {
+    deviceId = "tank-01",
+    upperTank,
+    lowerTank,
+    pumpStatus = "OFF",
+    systemEnabled = true,
+    pumpMode = "AUTO",
+    sensorStatus,
+    failedSensor,
+    // single tank fallbacks
     distanceCm,
     percentage,
     waterHeightCm,
     tankStatus,
-    pumpStatus,
+  } = payload;
+
+  const defaultUpper = upperTank || {
+    distanceCm: distanceCm ?? 10.0,
+    percentage: percentage ?? 75.0,
+    waterHeightCm: waterHeightCm ?? 15.0,
+    tankStatus:
+      tankStatus ??
+      (sensorStatus === "ERROR" && failedSensor === "UPPER"
+        ? "Sensor Error"
+        : "Normal"),
+  };
+
+  const defaultLower = lowerTank || {
+    distanceCm: distanceCm ?? 8.0,
+    percentage: percentage ?? 80.0,
+    waterHeightCm: waterHeightCm ?? 17.0,
+    tankStatus:
+      tankStatus ??
+      (sensorStatus === "ERROR" && failedSensor === "LOWER"
+        ? "Sensor Error"
+        : "Normal"),
+  };
+
+  if (sensorStatus === "ERROR") {
+    if (failedSensor === "UPPER" || !failedSensor) {
+      defaultUpper.tankStatus = "Sensor Error";
+    }
+    if (failedSensor === "LOWER" || !failedSensor) {
+      defaultLower.tankStatus = "Sensor Error";
+    }
+  }
+
+  latestReading = {
+    deviceId,
+    upperTank: {
+      distanceCm: Number(defaultUpper.distanceCm ?? 0),
+      percentage: Number(defaultUpper.percentage ?? 0),
+      waterHeightCm: Number(defaultUpper.waterHeightCm ?? 0),
+      tankStatus: String(defaultUpper.tankStatus || "Normal"),
+    },
+    lowerTank: {
+      distanceCm: Number(defaultLower.distanceCm ?? 0),
+      percentage: Number(defaultLower.percentage ?? 0),
+      waterHeightCm: Number(defaultLower.waterHeightCm ?? 0),
+      tankStatus: String(defaultLower.tankStatus || "Normal"),
+    },
+    pumpStatus: String(pumpStatus || "OFF"),
+    systemEnabled: Boolean(systemEnabled ?? true),
+    pumpMode: String(pumpMode || "AUTO"),
+    sensorStatus: sensorStatus ? String(sensorStatus) : undefined,
+    failedSensor: failedSensor ? String(failedSensor) : undefined,
     receivedAt: new Date(),
   };
 
@@ -36,12 +86,19 @@ export function getLatestReading() {
 function serializeReading(reading) {
   return {
     deviceId: reading.deviceId,
-    distanceCm: reading.distanceCm,
-    percentage: reading.percentage,
-    waterHeightCm: reading.waterHeightCm,
-    tankStatus: reading.tankStatus,
+    upperTank: reading.upperTank,
+    lowerTank: reading.lowerTank,
     pumpStatus: reading.pumpStatus,
+    systemEnabled: reading.systemEnabled,
+    pumpMode: reading.pumpMode,
+    sensorStatus: reading.sensorStatus,
+    failedSensor: reading.failedSensor,
     receivedAt: reading.receivedAt.toISOString(),
+    // Backward compatibility for single-tank clients
+    distanceCm: reading.upperTank.distanceCm,
+    percentage: reading.upperTank.percentage,
+    waterHeightCm: reading.upperTank.waterHeightCm,
+    tankStatus: reading.upperTank.tankStatus,
   };
 }
 
