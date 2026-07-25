@@ -1,8 +1,26 @@
+import UltrasonicReading from "../models/UltrasonicReading.js";
+
 const ONLINE_WINDOW_MS = 10_000;
 
+// Kept in memory so the dashboard and the ESP32 response path never wait on
+// (or fail because of) MongoDB. Mongo is the durable copy, this is the hot one.
 let latestReading = null;
 
-export function saveLatestReading(payload) {
+function toTank(source, fallbackStatus) {
+  return {
+    distanceCm: Number(source?.distanceCm ?? 0),
+    percentage: Number(source?.percentage ?? 0),
+    waterHeightCm: Number(source?.waterHeightCm ?? 0),
+    tankStatus: String(source?.tankStatus || fallbackStatus || "Normal"),
+  };
+}
+
+/**
+ * Builds the single normalized telemetry shape used by the HTTP response,
+ * the Socket.IO event, and the MongoDB document, so the ESP32 payload names
+ * and the dashboard field names can never drift apart.
+ */
+function normalizePayload(payload) {
   const {
     deviceId = "tank-01",
     upperTank,
@@ -12,65 +30,60 @@ export function saveLatestReading(payload) {
     pumpMode = "AUTO",
     sensorStatus,
     failedSensor,
-    // single tank fallbacks
+    // Optional YF-S201 flow telemetry — absent in the current firmware.
+    flowRateLMin,
+    sessionVolumeLiters,
+    flowStatus,
+    // Single-tank backward compatibility fields:
     distanceCm,
     percentage,
     waterHeightCm,
     tankStatus,
   } = payload;
 
-  const defaultUpper = upperTank || {
-    distanceCm: distanceCm ?? 10.0,
-    percentage: percentage ?? 75.0,
-    waterHeightCm: waterHeightCm ?? 15.0,
-    tankStatus:
-      tankStatus ??
-      (sensorStatus === "ERROR" && failedSensor === "UPPER"
-        ? "Sensor Error"
-        : "Normal"),
-  };
+  const singleTankFallback = { distanceCm, percentage, waterHeightCm, tankStatus };
 
-  const defaultLower = lowerTank || {
-    distanceCm: distanceCm ?? 8.0,
-    percentage: percentage ?? 80.0,
-    waterHeightCm: waterHeightCm ?? 17.0,
-    tankStatus:
-      tankStatus ??
-      (sensorStatus === "ERROR" && failedSensor === "LOWER"
-        ? "Sensor Error"
-        : "Normal"),
-  };
+  const resolvedUpper = toTank(upperTank || singleTankFallback, "Normal");
+  const resolvedLower = toTank(lowerTank || singleTankFallback, "Normal");
 
   if (sensorStatus === "ERROR") {
     if (failedSensor === "UPPER" || !failedSensor) {
-      defaultUpper.tankStatus = "Sensor Error";
+      resolvedUpper.tankStatus = "Sensor Error";
     }
     if (failedSensor === "LOWER" || !failedSensor) {
-      defaultLower.tankStatus = "Sensor Error";
+      resolvedLower.tankStatus = "Sensor Error";
     }
   }
 
-  latestReading = {
+  const resolvedPumpStatus = String(pumpStatus || "OFF");
+  const receivedAt = new Date();
+
+  return {
     deviceId,
-    upperTank: {
-      distanceCm: Number(defaultUpper.distanceCm ?? 0),
-      percentage: Number(defaultUpper.percentage ?? 0),
-      waterHeightCm: Number(defaultUpper.waterHeightCm ?? 0),
-      tankStatus: String(defaultUpper.tankStatus || "Normal"),
-    },
-    lowerTank: {
-      distanceCm: Number(defaultLower.distanceCm ?? 0),
-      percentage: Number(defaultLower.percentage ?? 0),
-      waterHeightCm: Number(defaultLower.waterHeightCm ?? 0),
-      tankStatus: String(defaultLower.tankStatus || "Normal"),
-    },
-    pumpStatus: String(pumpStatus || "OFF"),
+    upperTank: resolvedUpper,
+    lowerTank: resolvedLower,
+    pumpStatus: resolvedPumpStatus,
+    pumpRunning: resolvedPumpStatus === "ON",
     systemEnabled: Boolean(systemEnabled ?? true),
     pumpMode: String(pumpMode || "AUTO"),
-    sensorStatus: sensorStatus ? String(sensorStatus) : undefined,
-    failedSensor: failedSensor ? String(failedSensor) : undefined,
-    receivedAt: new Date(),
+    sensorStatus: sensorStatus ? String(sensorStatus) : null,
+    failedSensor: failedSensor ? String(failedSensor) : null,
+    flowRateLMin: flowRateLMin ?? null,
+    sessionVolumeLiters: sessionVolumeLiters ?? null,
+    flowStatus: flowStatus ?? null,
+    receivedAt,
   };
+}
+
+export function saveLatestReading(payload) {
+  latestReading = normalizePayload(payload);
+
+  // Persist without blocking the device response. A MongoDB problem must
+  // degrade durability only — it must never turn a good reading into an error
+  // for the ESP32 or stall the live dashboard update.
+  UltrasonicReading.create(latestReading).catch((error) => {
+    console.error("[Ultrasonic] Failed to persist reading:", error.message);
+  });
 
   return serializeReading(latestReading);
 }
@@ -83,17 +96,68 @@ export function getLatestReading() {
   return withOnlineStatus(serializeReading(latestReading));
 }
 
+/**
+ * Restores the last stored reading after a backend restart so the dashboard
+ * shows real history instead of "Awaiting Data". The online/offline decision
+ * still comes from the reading's own timestamp, so a stale restored reading
+ * correctly reports the device as offline.
+ */
+export async function hydrateLatestReading() {
+  try {
+    const stored = await UltrasonicReading.findOne()
+      .sort({ receivedAt: -1 })
+      .lean();
+
+    if (!stored) {
+      console.log("[Ultrasonic] No stored readings found in MongoDB.");
+      return null;
+    }
+
+    latestReading = {
+      deviceId: stored.deviceId,
+      upperTank: toTank(stored.upperTank),
+      lowerTank: toTank(stored.lowerTank),
+      pumpStatus: stored.pumpStatus,
+      pumpRunning: stored.pumpRunning ?? stored.pumpStatus === "ON",
+      systemEnabled: stored.systemEnabled,
+      pumpMode: stored.pumpMode,
+      sensorStatus: stored.sensorStatus ?? null,
+      failedSensor: stored.failedSensor ?? null,
+      flowRateLMin: stored.flowRateLMin ?? null,
+      sessionVolumeLiters: stored.sessionVolumeLiters ?? null,
+      flowStatus: stored.flowStatus ?? null,
+      receivedAt: new Date(stored.receivedAt),
+    };
+
+    console.log(
+      `[Ultrasonic] Restored last reading for ${stored.deviceId} from ${latestReading.receivedAt.toISOString()}`
+    );
+
+    return serializeReading(latestReading);
+  } catch (error) {
+    console.error("[Ultrasonic] Failed to restore last reading:", error.message);
+    return null;
+  }
+}
+
 function serializeReading(reading) {
+  const timestamp = reading.receivedAt.toISOString();
+
   return {
     deviceId: reading.deviceId,
     upperTank: reading.upperTank,
     lowerTank: reading.lowerTank,
     pumpStatus: reading.pumpStatus,
+    pumpRunning: reading.pumpRunning,
     systemEnabled: reading.systemEnabled,
     pumpMode: reading.pumpMode,
     sensorStatus: reading.sensorStatus,
     failedSensor: reading.failedSensor,
-    receivedAt: reading.receivedAt.toISOString(),
+    flowRateLMin: reading.flowRateLMin,
+    sessionVolumeLiters: reading.sessionVolumeLiters,
+    flowStatus: reading.flowStatus,
+    receivedAt: timestamp,
+    timestamp,
     // Backward compatibility for single-tank clients
     distanceCm: reading.upperTank.distanceCm,
     percentage: reading.upperTank.percentage,

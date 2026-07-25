@@ -6,16 +6,10 @@ export async function fetchDeviceControlState() {
 }
 
 export async function updateDeviceControlState(payload) {
-  console.log("[CONTROL] Button clicked", payload);
   const url = "/device/control";
-  console.log("[CONTROL] Sending request", {
-    method: "PUT",
-    url,
-    payload,
-  });
+
   try {
     const response = await api.put(url, payload);
-    console.log("[CONTROL] Success", response.data);
     return response.data;
   } catch (error) {
     console.error("[CONTROL] Request failed", {

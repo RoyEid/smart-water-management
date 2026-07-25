@@ -14,6 +14,11 @@ export default function validateRequest(schema) {
           formattedErrors[path] = issue.message;
         });
 
+        console.warn(
+          `[Validation] REJECTED ${req.method} ${req.originalUrl}:`,
+          formattedErrors
+        );
+
         const validationError = new Error("Validation failed");
         validationError.statusCode = 400;
         validationError.errors = formattedErrors;
