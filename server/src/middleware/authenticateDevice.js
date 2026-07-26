@@ -8,17 +8,41 @@ export default function authenticateDevice(req, res, next) {
   const configuredKey = process.env.DEVICE_API_KEY;
 
   if (!configuredKey) {
+    console.error(
+      "[Device Auth] DEVICE_API_KEY is not set in server/.env. " +
+      "Every device request will be rejected until it is configured."
+    );
     const error = new Error("Device API authentication is not configured.");
     error.statusCode = 500;
     return next(error);
   }
 
   const providedKey = req.get("x-device-key");
-  const isValid =
-    typeof providedKey === "string" &&
-    crypto.timingSafeEqual(hashKey(providedKey), hashKey(configuredKey));
+
+  if (typeof providedKey !== "string") {
+    console.warn(
+      `[Device Auth] REJECTED ${req.method} ${req.originalUrl} from ${req.ip}: ` +
+      "the x-device-key header is missing."
+    );
+    const error = new Error("Missing device API key header 'x-device-key'.");
+    error.statusCode = 401;
+    return next(error);
+  }
+
+  // Trim both sides: a trailing space or CR in .env, or in the firmware
+  // string literal, is otherwise an invisible cause of a permanent 401.
+  const isValid = crypto.timingSafeEqual(
+    hashKey(providedKey.trim()),
+    hashKey(configuredKey.trim())
+  );
 
   if (!isValid) {
+    // Never log the key itself — length is enough to spot a truncated value.
+    console.warn(
+      `[Device Auth] REJECTED ${req.method} ${req.originalUrl} from ${req.ip}: ` +
+      `x-device-key did not match (received ${providedKey.trim().length} chars, ` +
+      `expected ${configuredKey.trim().length}).`
+    );
     const error = new Error("Invalid device API key.");
     error.statusCode = 401;
     return next(error);

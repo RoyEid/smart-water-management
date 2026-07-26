@@ -21,9 +21,22 @@ function isTankObj(obj) {
   );
 }
 
+/**
+ * Accepts either field name the backend may send, and either a Date or an ISO
+ * string, so a naming or type difference can never make a live device look
+ * offline. Returns NaN when there is genuinely no usable timestamp.
+ */
+function readingTime(value) {
+  const raw = value?.receivedAt ?? value?.timestamp;
+  if (raw instanceof Date) return raw.getTime();
+  if (typeof raw === "number") return raw;
+  if (typeof raw === "string") return Date.parse(raw);
+  return NaN;
+}
+
 function isReading(value) {
   if (!value || typeof value.deviceId !== "string") return false;
-  if (Number.isNaN(Date.parse(value.receivedAt))) return false;
+  if (!Number.isFinite(readingTime(value))) return false;
 
   if (value.upperTank || value.lowerTank) {
     return (
@@ -58,13 +71,18 @@ function normalizeReading(value) {
     tankStatus: value.tankStatus || "Normal",
   };
 
+  const pumpStatus = value.pumpStatus || "OFF";
+
   return {
     ...value,
     upperTank,
     lowerTank,
-    pumpStatus: value.pumpStatus || "OFF",
+    pumpStatus,
+    pumpRunning: value.pumpRunning ?? pumpStatus === "ON",
     systemEnabled: value.systemEnabled ?? true,
     pumpMode: value.pumpMode || "AUTO",
+    // Normalized to a number once, so every consumer compares like with like.
+    receivedAtMs: readingTime(value),
   };
 }
 
@@ -73,17 +91,28 @@ export default function useTankData() {
   const [readings, setReadings] = useState([]);
   const [error, setError] = useState("");
   const [unauthorized, setUnauthorized] = useState(false);
-  const [clock, setClock] = useState(0);
+  const [clock, setClock] = useState(() => Date.now());
 
   useEffect(() => {
     let mounted = true;
     let newest = 0;
 
     const applyReading = (next) => {
-      const timestamp = Date.parse(next?.receivedAt);
-      if (!isReading(next) || timestamp < newest) return;
+      if (!isReading(next)) return;
+
+      const timestamp = readingTime(next);
+      if (timestamp < newest) return;
       newest = timestamp;
       const normalized = normalizeReading(next);
+
+      // TEMP DEBUG: confirms each live payload's flow fields reach React fresh
+      // (no caching/memoization). Remove once the flow pipeline is verified.
+      console.debug(
+        "[FLOW] payload flowRateLMin=", normalized.flowRateLMin,
+        "totalTransferredLitres=", normalized.totalTransferredLitres,
+        "at", normalized.receivedAt
+      );
+
       setReading(normalized);
       setReadings((current) => [...current, normalized].slice(-20));
       setError("");
@@ -125,10 +154,13 @@ export default function useTankData() {
     };
   }, []);
 
+  // Online purely as a function of how old the newest reading is. Nothing here
+  // depends on component lifetime, so a remount cannot flip a live device
+  // offline, and a genuinely silent device still goes offline after 10 s.
   const isOnline = useMemo(() => {
-    const timestamp = Date.parse(reading?.receivedAt);
+    const timestamp = reading?.receivedAtMs;
     return Number.isFinite(timestamp) && clock - timestamp < ONLINE_WINDOW_MS;
-  }, [clock, reading?.receivedAt]);
+  }, [clock, reading?.receivedAtMs]);
 
   return { reading, readings, isOnline, error, unauthorized };
 }

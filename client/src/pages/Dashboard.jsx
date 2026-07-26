@@ -2,27 +2,20 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Activity,
-  AlertTriangle,
-  CheckCircle2,
-  Cpu,
   Droplets,
-  Gauge,
   Info,
   Radio,
   RotateCw,
   Ruler,
   ShieldCheck,
-  Sliders,
   Waves,
-  Wifi,
-  Zap,
 } from "lucide-react";
 import AlertsPanel from "../components/dashboard/AlertsPanel";
 import AutoControlReasonCard from "../components/dashboard/AutoControlReasonCard";
 import DeviceControlPanel from "../components/dashboard/DeviceControlPanel";
 import MetricCard from "../components/dashboard/MetricCard";
-import SystemStatus from "../components/dashboard/SystemStatus";
 import TankVisual from "../components/dashboard/TankVisual";
+import WaterFlowCard from "../components/dashboard/WaterFlowCard";
 import WaterLevelChart from "../components/dashboard/WaterLevelChart";
 import WaterTransferVisual from "../components/dashboard/WaterTransferVisual";
 import Sidebar from "../components/layout/Sidebar";
@@ -33,14 +26,6 @@ import api from "../services/api";
 import SettingsPage from "./SettingsPage";
 import { useLanguage } from "../context/LanguageContext";
 
-const MOCK_SYSTEM_DATA = {
-  flowRate: "0.0 L/min",
-  totalTransferred: "0 L",
-  electricitySource: "Mains",
-  voltage: "220 V",
-  current: "0.0 A",
-};
-
 export default function Dashboard() {
   const { reading, readings, isOnline, error, unauthorized } = useTankData();
   const { t, dir } = useLanguage();
@@ -50,6 +35,7 @@ export default function Dashboard() {
     dashboard: t("dashboardOverview"),
     "pump-control": t("remotePumpControl"),
     "live-monitoring": t("liveSensorTelemetry"),
+    "water-flow": t("waterFlow"),
     settings: t("accountSettings"),
   };
 
@@ -276,6 +262,16 @@ export default function Dashboard() {
                 />
               </section>
 
+              {/* Water Flow Telemetry */}
+              <section>
+                <WaterFlowCard
+                  flowRate={reading?.flowRateLMin}
+                  totalVolume={reading?.totalTransferredLitres}
+                  flowDataMode={reading?.flowDataMode}
+                  isOnline={isOnline}
+                />
+              </section>
+
               {/* Multi-Series Telemetry Chart */}
               <section>
                 <WaterLevelChart readings={readings} />
@@ -450,7 +446,41 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* VIEW 4: SETTINGS */}
+          {/* VIEW 4: DEDICATED WATER FLOW */}
+          {activeTab === "water-flow" && (
+            <div className="space-y-6">
+              <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+                <div>
+                  <p className="text-[11px] font-extrabold uppercase tracking-widest text-sky-600 dark:text-cyan-400">
+                    {t("realtimeOverview")}
+                  </p>
+                  <h2 className="mt-0.5 text-2xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100 sm:text-3xl">
+                    {t("waterFlow")}
+                  </h2>
+                </div>
+                <p className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 px-3.5 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 shadow-sm">
+                  <Activity size={14} className="text-cyan-600 dark:text-cyan-400" />
+                  {t("telemetryLive")} · {lastUpdated}
+                </p>
+              </div>
+
+              <WaterFlowCard
+                flowRate={reading?.flowRateLMin}
+                totalVolume={reading?.totalTransferredLitres}
+                flowDataMode={reading?.flowDataMode}
+                isOnline={isOnline}
+              />
+
+              {/* Flow occurs while water is transferred between tanks */}
+              <WaterTransferVisual
+                pumpStatus={reading?.pumpStatus || "OFF"}
+                pumpMode={controlState.pumpMode || reading?.pumpMode || "AUTO"}
+                isOnline={isOnline}
+              />
+            </div>
+          )}
+
+          {/* VIEW 5: SETTINGS */}
           {activeTab === "settings" && (
             <SettingsPage logout={logout} loggingOut={loggingOut} />
           )}

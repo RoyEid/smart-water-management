@@ -14,9 +14,6 @@ export function getDeviceControl(req, res) {
 }
 
 export function updateDeviceControl(req, res) {
-  console.log("PUT /api/device/control");
-  console.log("Request body:", req.body);
-
   const { state, changed } = setDeviceControlState(req.body);
 
   if (changed) {
