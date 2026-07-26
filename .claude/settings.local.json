@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-Process -Name node,mongod -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-NetFirewallRule -Enabled True -Direction Inbound | ForEach-Object { $r = $_; $p = $r | Get-NetFirewallPortFilter -ErrorAction SilentlyContinue; if \\($p.LocalPort -eq 5000\\) { [pscustomobject]@{ Name=$r.DisplayName; Action=$r.Action; Profile=$r.Profile; Protocol=$p.Protocol; Port=$p.LocalPort } } } | Format-List | Out-String -Width 200)",
+      "PowerShell(node \"C:\\\\Users\\\\Admin\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-Admin-Desktop-smart-water-management-main\\\\b7cb6b6b-ed90-4799-8e9c-4f29d3520efe\\\\scratchpad\\\\e2e.mjs\" 2>&1)"
+    ]
+  }
+}

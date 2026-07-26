@@ -1,5 +1,4 @@
 import {
-  Activity,
   BarChart3,
   Bell,
   ChevronLeft,
@@ -11,8 +10,8 @@ import {
   Radio,
   Settings,
   Sliders,
+  Waves,
   X,
-  Zap,
 } from "lucide-react";
 import ComingSoonBadge from "./ComingSoonBadge";
 import { useLanguage } from "../../context/LanguageContext";
@@ -33,12 +32,11 @@ export default function Sidebar({
     { id: "dashboard", labelKey: "dashboard", icon: LayoutDashboard },
     { id: "pump-control", labelKey: "pumpControl", icon: Sliders },
     { id: "live-monitoring", labelKey: "liveMonitoring", icon: Radio },
+    { id: "water-flow", labelKey: "waterFlow", icon: Waves },
     { id: "settings", labelKey: "settings", icon: Settings },
   ];
 
   const futureItems = [
-    { id: "water-flow", labelKey: "waterFlow", icon: Droplets },
-    { id: "electricity", labelKey: "electricitySource", icon: Zap },
     { id: "history", labelKey: "history", icon: History },
     { id: "analytics", labelKey: "analytics", icon: BarChart3 },
     { id: "alerts", labelKey: "alerts", icon: Bell },

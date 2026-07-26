@@ -1,18 +1,20 @@
 # Smart Water Ultrasonic Monitor
 
-This project receives HC-SR04 distance readings from an ESP32-S3 and displays the latest reading on a small authenticated React dashboard. The ESP32 sends one valid reading about every 500 ms. The backend immediately broadcasts each reading with Socket.IO, so the page changes without refreshing. The sensor becomes Offline when no reading arrives for three seconds.
+This project receives HC-SR04 distance readings for an upper and a lower tank from an ESP32-S3 and displays them on an authenticated React dashboard. The ESP32 sends one reading every 2 s. The backend immediately broadcasts each reading with Socket.IO, so the page changes without refreshing. The device is marked Offline when no reading arrives for ten seconds.
 
-The backend keeps only the latest reading in memory. Restarting the backend clears that reading; the sensor will populate it again on its next successful POST.
+Each reading is written to MongoDB and also cached in memory. On restart the backend restores the newest stored reading, so the dashboard shows real history instead of "Awaiting Data" — a restored reading older than ten seconds still correctly reports the device as Offline.
 
 ## Live data flow
 
 ```text
-HC-SR04 → ESP32-S3 → POST /api/sensors/ultrasonic
-        → in-memory latest reading → Socket.IO ultrasonic-distance event
-        → React dashboard updates the distance, status, and timestamp only
+HC-SR04 ×2 → ESP32-S3 → POST /api/sensors/ultrasonic  (header: x-device-key)
+           → normalized telemetry object
+           → MongoDB (UltrasonicReading) + in-memory latest reading
+           → Socket.IO "ultrasonic:update" event
+           → React dashboard updates both tanks, pump state, and timestamp
 ```
 
-The dashboard first requests `GET /api/sensors/ultrasonic/latest` with the existing JWT cookie. A single module-level socket.io-client connection listens for the exact `ultrasonic-distance` event, reconnects automatically, and is cleaned up when the dashboard unmounts.
+The dashboard first requests `GET /api/sensors/ultrasonic/latest` with the existing JWT cookie. A single module-level socket.io-client connection listens for the exact `ultrasonic:update` event, reconnects automatically, and is cleaned up when the dashboard unmounts.
 
 ## Project structure
 
@@ -130,12 +132,15 @@ constexpr char WIFI_PASSWORD[] = "YOUR_NEW_WIFI_PASSWORD";
 constexpr char DEVICE_API_KEY[] = "YOUR_NEW_DEVICE_API_KEY";
 ```
 
-The endpoint remains in `esp32/esp32.ino`:
+The endpoint lives in `esp32/Smart_Water_Management/Smart_Water_Management.ino`. Only the host needs changing; both URLs are built from it, so they cannot drift apart:
 
 ```cpp
-const char* SERVER_URL =
-  "http://192.168.1.192:5000/api/sensors/ultrasonic";
+#define SERVER_HOST "10.231.71.157"   // laptop Wi-Fi IPv4, never localhost
+#define SERVER_PORT "5000"
+#define SERVER_BASE_URL "http://" SERVER_HOST ":" SERVER_PORT
 ```
+
+`SERVER_HOST` must be the laptop's current Wi-Fi IPv4 address on the network the ESP32 joins. Confirm it with `ipconfig` and re-check after every reconnect, because DHCP can hand out a different address. Never use `localhost` or `127.0.0.1` here — on the ESP32 those point at the ESP32 itself.
 
 The device key must exactly match `DEVICE_API_KEY` in `server/.env`. Do not copy the device key into the React frontend. The previously exposed Wi-Fi password must also be changed on the router/access point; removing it from source code cannot revoke that old password.
 
@@ -185,7 +190,7 @@ The valid distance and representative median pulse are printed before the HTTP a
 1. Compile `esp32/esp32.ino` with the ESP32-S3 board selected.
 2. Set `SENSOR_ONLY_TEST = true`, upload, and inspect Serial Monitor at 115200 baud.
 3. Confirm real hardware produces stable valid distance lines. A successful compile alone does not prove this physical check.
-4. Start MongoDB, run `npm run dev` once, then test `http://localhost:5000/api/health` and `http://192.168.1.192:5000/api/health`.
+4. Start MongoDB, run `npm run dev` once, then test `http://localhost:5000/api/health` and `http://<laptop-lan-ip>:5000/api/health`. Both must return HTTP 200 with `databaseConnected` and `socketReady` set to `true`.
 5. Open `/dashboard`, manually POST `26.5`, and confirm the page changes immediately to `26.5 cm`.
 6. Put newly rotated Wi-Fi credentials in `secrets.h`, set `SENSOR_ONLY_TEST = false`, and upload again.
 7. Confirm Serial Monitor shows `HTTP: 200` after each valid filtered reading.
@@ -317,16 +322,32 @@ Does not require authentication. Test it from both the laptop and the Wi-Fi addr
 
 ```text
 http://localhost:5000/api/health
-http://192.168.1.192:5000/api/health
+http://<laptop-lan-ip>:5000/api/health
 ```
 
-If localhost works but the Wi-Fi URL does not, confirm the backend log says `http://0.0.0.0:5000` and allow Node.js or TCP port 5000 through Windows Firewall on Private networks.
+Both return:
+
+```json
+{
+  "success": true,
+  "status": "ok",
+  "databaseConnected": true,
+  "socketReady": true,
+  "timestamp": "2026-07-22T12:00:00.000Z"
+}
+```
+
+If localhost works but the Wi-Fi URL does not, confirm the backend log says `http://0.0.0.0:5000` and allow Node.js or TCP port 5000 through Windows Firewall on the profile the Wi-Fi adapter is using (check with `Get-NetConnectionProfile`; a phone hotspot is usually classified Public, not Private):
+
+```text
+netsh advfirewall firewall add rule name="Smart Water Backend Port 5000" dir=in action=allow protocol=TCP localport=5000
+```
 
 ### Socket.IO event
 
-Every accepted POST immediately emits:
+Every accepted POST immediately emits the normalized telemetry object:
 
 ```text
-ultrasonic-distance
-{"deviceId":"tank-01","distanceCm":24.7,"receivedAt":"2026-07-22T12:00:00.000Z"}
+ultrasonic:update
+{"deviceId":"tank-01","upperTank":{...},"lowerTank":{...},"pumpStatus":"ON","pumpRunning":true,"systemEnabled":true,"pumpMode":"AUTO","receivedAt":"...","timestamp":"..."}
 ```

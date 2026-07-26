@@ -35,7 +35,7 @@ export default function useDeviceControl() {
         if (mounted) {
           applyState(data);
         }
-      } catch (err) {
+      } catch {
         if (mounted) {
           setError("Unable to load device control state.");
         }
@@ -44,21 +44,15 @@ export default function useDeviceControl() {
       }
     };
 
-    const handleSocketConnect = () => {
-      console.log("[SOCKET] Connected", sensorSocket.id);
-    };
-
     const handleSocketConnectError = (err) => {
       console.error("[SOCKET] Connection error", err.message);
     };
 
     const handleControlUpdate = (newControlState) => {
-      console.log("[SOCKET] control:update", newControlState);
       if (!mounted) return;
       applyState(newControlState);
     };
 
-    sensorSocket.on("connect", handleSocketConnect);
     sensorSocket.on("connect_error", handleSocketConnectError);
     sensorSocket.on("control:update", handleControlUpdate);
     sensorSocket.on("device-control-changed", handleControlUpdate);
@@ -67,7 +61,6 @@ export default function useDeviceControl() {
 
     return () => {
       mounted = false;
-      sensorSocket.off("connect", handleSocketConnect);
       sensorSocket.off("connect_error", handleSocketConnectError);
       sensorSocket.off("control:update", handleControlUpdate);
       sensorSocket.off("device-control-changed", handleControlUpdate);
