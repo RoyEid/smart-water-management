@@ -15,7 +15,6 @@ export const translations = {
     liveMonitoring: "Live Monitoring",
     settings: "Settings",
     waterFlow: "Water Flow",
-    electricitySource: "Electricity Source",
     history: "History",
     analytics: "Analytics",
     alerts: "Alerts",
@@ -32,6 +31,10 @@ export const translations = {
     awaitingData: "Awaiting Data",
     realtimeOverview: "Real-time Overview",
     waterTankCenterpiece: "Water Tank Centerpiece",
+    currentFlowRate: "Current Flow Rate",
+    totalWaterTransferred: "Total Water Transferred",
+    waitingForData: "Waiting for data...",
+    simulatedData: "Simulated Data",
 
     // Settings Navigation
     account: "Account",
@@ -144,7 +147,6 @@ export const translations = {
     liveMonitoring: "المراقبة المباشرة",
     settings: "الإعدادات",
     waterFlow: "تدفق المياه",
-    electricitySource: "مصدر الكهرباء",
     history: "السجل التاريخي",
     analytics: "التحليلات",
     alerts: "التنبيهات",
@@ -161,6 +163,10 @@ export const translations = {
     awaitingData: "في انتظار البيانات",
     realtimeOverview: "نظرة عامة مباَشرة",
     waterTankCenterpiece: "خزان المياه الرئيسي",
+    currentFlowRate: "معدل التدفق الحالي",
+    totalWaterTransferred: "إجمالي المياه المنقولة",
+    waitingForData: "في انتظار البيانات...",
+    simulatedData: "بيانات محاكاة",
 
     // Settings Navigation
     account: "الحساب",
@@ -273,7 +279,6 @@ export const translations = {
     liveMonitoring: "Surveillance en direct",
     settings: "Paramètres",
     waterFlow: "Débit d'eau",
-    electricitySource: "Source d'électricité",
     history: "Historique",
     analytics: "Analytique",
     alerts: "Alertes",
@@ -290,6 +295,10 @@ export const translations = {
     awaitingData: "En attente de données",
     realtimeOverview: "Aperçu en temps réel",
     waterTankCenterpiece: "Réservoir d'eau principal",
+    currentFlowRate: "Débit actuel",
+    totalWaterTransferred: "Total d'eau transférée",
+    waitingForData: "En attente de données...",
+    simulatedData: "Données simulées",
 
     // Settings Navigation
     account: "Compte",

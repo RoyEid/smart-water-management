@@ -104,6 +104,15 @@ export default function useTankData() {
       if (timestamp < newest) return;
       newest = timestamp;
       const normalized = normalizeReading(next);
+
+      // TEMP DEBUG: confirms each live payload's flow fields reach React fresh
+      // (no caching/memoization). Remove once the flow pipeline is verified.
+      console.debug(
+        "[FLOW] payload flowRateLMin=", normalized.flowRateLMin,
+        "totalTransferredLitres=", normalized.totalTransferredLitres,
+        "at", normalized.receivedAt
+      );
+
       setReading(normalized);
       setReadings((current) => [...current, normalized].slice(-20));
       setError("");
