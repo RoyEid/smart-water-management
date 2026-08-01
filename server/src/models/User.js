@@ -45,10 +45,41 @@ const userSchema = new mongoose.Schema(
       type: String,
       enum: ["user", "admin"],
       default: "user",
+      index: true,
     },
     isVerified: {
       type: Boolean,
       default: false,
+      index: true,
+    },
+    // An admin can disable an account without deleting it. A disabled account
+    // keeps its data but is refused at the authentication middleware.
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+    lastLoginAt: {
+      type: Date,
+    },
+    // Server-side copy of the UI preferences so they follow the account across
+    // browsers instead of living only in that browser's localStorage.
+    preferences: {
+      theme: {
+        type: String,
+        enum: ["system", "light", "dark"],
+        default: "system",
+      },
+      language: {
+        type: String,
+        enum: ["en", "ar", "fr"],
+        default: "en",
+      },
+    },
+    notificationPrefs: {
+      pumpAlerts: { type: Boolean, default: true },
+      deviceOfflineAlerts: { type: Boolean, default: true },
+      safetyAlerts: { type: Boolean, default: true },
+      emailNotifications: { type: Boolean, default: false },
     },
     // Email verification fields
     emailVerificationCodeHash: {

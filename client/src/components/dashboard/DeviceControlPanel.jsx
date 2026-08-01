@@ -1,231 +1,302 @@
-import { Activity, Power, RotateCw, Sliders, ToggleLeft, ToggleRight, Zap } from "lucide-react";
+import { useState } from "react";
+import {
+  CheckCircle2,
+  CircleAlert,
+  LoaderCircle,
+  Power,
+  Sliders,
+  XCircle,
+  Zap,
+} from "lucide-react";
+import ConfirmDialog from "../ui/ConfirmDialog";
+import { useLanguage } from "../../context/LanguageContext";
+import { useToast } from "../../context/ToastContext";
+import { canCommandManualOn } from "../../utils/pumpReasoning";
+import { formatTime } from "../../utils/telemetryFormat";
 
+/**
+ * The pump controls.
+ *
+ * Every control is disabled while a command is in flight, and the manual ON
+ * button is additionally gated on the safety interlocks — the firmware would
+ * refuse an unsafe manual start anyway, so offering the button would be
+ * offering something that cannot happen.
+ */
 export default function DeviceControlPanel({
   controlState,
+  reading,
   updating,
+  loading,
   error,
+  lastCommand,
+  isOnline,
   toggleSystemEnabled,
   setPumpMode,
   setManualPumpState,
-  isOnline,
-  realPumpStatus = "OFF",
 }) {
+  const { t, language } = useLanguage();
+  const toast = useToast();
+  const [pendingConfirm, setPendingConfirm] = useState(null);
+
   const { systemEnabled, pumpMode, manualPumpState } = controlState;
+  const knownSystemState = systemEnabled !== undefined;
+  const isManual = pumpMode === "MANUAL";
+
+  const manualOnCheck = canCommandManualOn({ reading, controlState, isOnline });
+
+  // A control that has not loaded yet must not be clickable: acting on an
+  // unknown current state can send the opposite of what the user intends.
+  const controlsBusy = updating || loading;
+
+  const runCommand = async (command, successKey) => {
+    const result = await command();
+    if (result?.duplicate) return;
+    if (result?.ok) {
+      toast.success(t(successKey));
+    } else if (result?.message) {
+      toast.error(result.message);
+    }
+  };
+
+  const confirmAndRun = (config) => setPendingConfirm(config);
+
+  const handleConfirm = async () => {
+    const config = pendingConfirm;
+    setPendingConfirm(null);
+    if (config) await runCommand(config.command, config.successKey);
+  };
 
   return (
-    <section className="group overflow-hidden rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 p-6 shadow-sm shadow-slate-900/5 transition duration-300 hover:-translate-y-0.5 hover:shadow-xl sm:p-7">
-      {/* Panel Header */}
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <span className="text-[11px] font-extrabold uppercase tracking-widest text-sky-600 dark:text-cyan-400">
-            Remote Operations
-          </span>
-          <h2 className="mt-0.5 text-xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            Device Control
-            <Sliders size={18} className="text-cyan-600 dark:text-cyan-400" aria-hidden="true" />
-          </h2>
+    <article className="rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm shadow-slate-900/5 sm:p-7 dark:border-slate-800 dark:bg-slate-900/90">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-extrabold uppercase tracking-widest text-sky-600 dark:text-cyan-400">
+            {t("remoteActuation")}
+          </p>
+          <h3 className="mt-0.5 truncate text-lg font-extrabold text-slate-900 dark:text-slate-100">
+            {t("pumpControls")}
+          </h3>
         </div>
-        <span
-          className={`grid size-9 place-items-center rounded-xl ring-1 transition ${
-            systemEnabled
-              ? "bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 ring-emerald-200/80 dark:ring-emerald-800/80"
-              : "bg-rose-50 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 ring-rose-200/80 dark:ring-rose-800/80"
-          }`}
-        >
-          <Power size={17} aria-hidden="true" />
+        <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-blue-50 text-blue-600 ring-1 ring-blue-100 dark:bg-blue-950/80 dark:text-cyan-400 dark:ring-blue-900/60">
+          <Sliders size={19} aria-hidden="true" />
         </span>
       </div>
 
       {error && (
-        <p className="mt-3 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/40 px-3 py-2 text-xs font-semibold text-rose-800 dark:text-rose-300">
-          {error}
-        </p>
+        <div
+          className="mt-4 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300"
+          role="alert"
+        >
+          <CircleAlert size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <span className="min-w-0 break-words">{error}</span>
+        </div>
       )}
 
-      {/* Control Grid */}
-      <div className="mt-5 space-y-5">
-        {/* 1. System Status Enable / Disable */}
-        <div className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 p-4">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <p className="text-xs font-bold text-slate-800 dark:text-slate-200">System Status</p>
-              <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                {systemEnabled ? "System Active · Telemetry & Pump Allowed" : "System Disabled · Pump Forced OFF"}
-              </p>
-            </div>
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-extrabold ring-1 ${
-                systemEnabled
-                  ? "bg-emerald-50 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 ring-emerald-200 dark:ring-emerald-800"
-                  : "bg-rose-50 dark:bg-rose-950/80 text-rose-800 dark:text-rose-300 ring-rose-200 dark:ring-rose-800"
-              }`}
-            >
-              <span
-                className={`size-1.5 rounded-full ${
-                  systemEnabled ? "animate-pulse bg-emerald-500" : "bg-rose-500"
-                }`}
-              />
-              {systemEnabled ? "Enabled" : "Disabled"}
-            </span>
-          </div>
+      {/* System master switch */}
+      <section className="mt-6">
+        <h4 className="text-xs font-extrabold text-slate-700 dark:text-slate-300">
+          {t("systemPower")}
+        </h4>
+        <p className="mt-1 text-[11px] font-medium leading-relaxed text-slate-500 dark:text-slate-400">
+          {t("systemPowerDesc")}
+        </p>
 
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              disabled={updating || systemEnabled}
-              onClick={() => toggleSystemEnabled(true)}
-              className={`inline-flex items-center justify-center gap-2 rounded-xl py-2 px-3 text-xs font-bold transition duration-200 ${
-                systemEnabled
-                  ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/20 ring-2 ring-emerald-500"
-                  : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 hover:text-emerald-700 dark:hover:text-emerald-300 hover:border-emerald-200 dark:hover:border-emerald-800"
-              } disabled:cursor-not-allowed disabled:opacity-70`}
-            >
-              🟢 Enable
-            </button>
-            <button
-              type="button"
-              disabled={updating || !systemEnabled}
-              onClick={() => toggleSystemEnabled(false)}
-              className={`inline-flex items-center justify-center gap-2 rounded-xl py-2 px-3 text-xs font-bold transition duration-200 ${
-                !systemEnabled
-                  ? "bg-rose-600 text-white shadow-md shadow-rose-600/20 ring-2 ring-rose-500"
-                  : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-rose-50 dark:hover:bg-rose-950/50 hover:text-rose-700 dark:hover:text-rose-300 hover:border-rose-200 dark:hover:border-rose-800"
-              } disabled:cursor-not-allowed disabled:opacity-70`}
-            >
-              🔴 Disable
-            </button>
-          </div>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <ControlButton
+            active={knownSystemState && systemEnabled === true}
+            disabled={controlsBusy}
+            busy={updating}
+            onClick={() =>
+              runCommand(() => toggleSystemEnabled(true), "commandSystemEnabled")
+            }
+            tone="emerald"
+            icon={Power}
+            label={t("systemEnabled")}
+          />
+          <ControlButton
+            active={knownSystemState && systemEnabled === false}
+            disabled={controlsBusy}
+            busy={updating}
+            // Disabling stops the pump immediately, so it is confirmed.
+            onClick={() =>
+              confirmAndRun({
+                titleKey: "confirmDisableTitle",
+                descriptionKey: "confirmDisableDesc",
+                confirmKey: "disableSystem",
+                command: () => toggleSystemEnabled(false),
+                successKey: "commandSystemDisabled",
+              })
+            }
+            tone="rose"
+            icon={Power}
+            label={t("systemDisabled")}
+          />
+        </div>
+      </section>
+
+      {/* Operating mode */}
+      <section className="mt-6 border-t border-slate-100 pt-5 dark:border-slate-800">
+        <h4 className="text-xs font-extrabold text-slate-700 dark:text-slate-300">
+          {t("operatingMode")}
+        </h4>
+        <p className="mt-1 text-[11px] font-medium leading-relaxed text-slate-500 dark:text-slate-400">
+          {t("operatingModeDesc")}
+        </p>
+
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <ControlButton
+            active={pumpMode === "AUTO"}
+            disabled={controlsBusy}
+            busy={updating}
+            onClick={() => runCommand(() => setPumpMode("AUTO"), "commandModeAuto")}
+            tone="blue"
+            icon={Zap}
+            label={t("autoMode")}
+          />
+          <ControlButton
+            active={isManual}
+            disabled={controlsBusy}
+            busy={updating}
+            onClick={() =>
+              confirmAndRun({
+                titleKey: "confirmManualTitle",
+                descriptionKey: "confirmManualDesc",
+                confirmKey: "manualMode",
+                destructive: false,
+                command: () => setPumpMode("MANUAL"),
+                successKey: "commandModeManual",
+              })
+            }
+            tone="amber"
+            icon={Sliders}
+            label={t("manualMode")}
+          />
+        </div>
+      </section>
+
+      {/* Manual pump command */}
+      <section className="mt-6 border-t border-slate-100 pt-5 dark:border-slate-800">
+        <h4 className="text-xs font-extrabold text-slate-700 dark:text-slate-300">
+          {t("manualCommand")}
+        </h4>
+        <p className="mt-1 text-[11px] font-medium leading-relaxed text-slate-500 dark:text-slate-400">
+          {t("manualCommandDesc")}
+        </p>
+
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <ControlButton
+            active={isManual && manualPumpState === "ON"}
+            disabled={controlsBusy || !manualOnCheck.allowed}
+            busy={updating}
+            onClick={() =>
+              confirmAndRun({
+                titleKey: "confirmPumpOnTitle",
+                descriptionKey: "confirmPumpOnDesc",
+                confirmKey: "startPump",
+                destructive: false,
+                command: () => setManualPumpState("ON"),
+                successKey: "commandManualOn",
+              })
+            }
+            tone="emerald"
+            icon={Power}
+            label={t("manualPumpOn")}
+          />
+          {/* Never gated: stopping the pump must always be available, whatever
+              the telemetry says. An OFF command is safe by definition. */}
+          <ControlButton
+            active={isManual && manualPumpState === "OFF"}
+            disabled={controlsBusy}
+            busy={updating}
+            onClick={() =>
+              runCommand(() => setManualPumpState("OFF"), "commandManualOff")
+            }
+            tone="rose"
+            icon={Power}
+            label={t("manualPumpOff")}
+          />
         </div>
 
-        {/* 2. Pump Mode Selector (Automatic vs Manual) */}
-        <div className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 p-4">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <p className="text-xs font-bold text-slate-800 dark:text-slate-200">Pump Mode</p>
-              <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                {pumpMode === "AUTO"
-                  ? "Automatic level threshold control"
-                  : "Manual user dashboard control"}
-              </p>
-            </div>
-            <span className="rounded-md bg-sky-50 dark:bg-sky-950/80 px-2 py-0.5 font-mono text-[10px] font-extrabold text-sky-700 dark:text-cyan-300 ring-1 ring-sky-200 dark:ring-sky-800">
-              {pumpMode}
-            </span>
-          </div>
-
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              disabled={updating || !systemEnabled || pumpMode === "AUTO"}
-              onClick={() => setPumpMode("AUTO")}
-              className={`inline-flex items-center justify-center gap-2 rounded-xl py-2 px-3 text-xs font-bold transition duration-200 ${
-                pumpMode === "AUTO"
-                  ? "bg-blue-600 text-white shadow-md shadow-blue-600/20 ring-2 ring-blue-500"
-                  : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-blue-50 dark:hover:bg-blue-950/50 hover:text-blue-700 dark:hover:text-cyan-300"
-              } disabled:cursor-not-allowed disabled:opacity-50`}
-            >
-              <Activity size={14} aria-hidden="true" />
-              Automatic
-            </button>
-            <button
-              type="button"
-              disabled={updating || !systemEnabled || pumpMode === "MANUAL"}
-              onClick={() => setPumpMode("MANUAL")}
-              className={`inline-flex items-center justify-center gap-2 rounded-xl py-2 px-3 text-xs font-bold transition duration-200 ${
-                pumpMode === "MANUAL"
-                  ? "bg-cyan-600 text-white shadow-md shadow-cyan-600/20 ring-2 ring-cyan-500"
-                  : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-cyan-50 dark:hover:bg-cyan-950/50 hover:text-cyan-700 dark:hover:text-cyan-300"
-              } disabled:cursor-not-allowed disabled:opacity-50`}
-            >
-              <Sliders size={14} aria-hidden="true" />
-              Manual
-            </button>
-          </div>
-        </div>
-
-        {/* 3. Manual Pump Control (Visible ONLY when Manual mode is active) */}
-        {pumpMode === "MANUAL" && (
-          <div className="rounded-2xl border border-cyan-100 dark:border-cyan-900/50 bg-gradient-to-br from-cyan-50/60 to-blue-50/60 dark:from-cyan-950/40 dark:to-blue-950/40 p-4 transition-all duration-300">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                  Manual Pump Control
-                </p>
-                <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                  Direct relay actuation override
-                </p>
-              </div>
-              <span
-                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
-                  manualPumpState === "ON"
-                    ? "bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300"
-                    : "bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300"
-                }`}
-              >
-                {manualPumpState === "ON" ? "ON" : "OFF"}
-              </span>
-            </div>
-
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                disabled={
-                  updating || !systemEnabled || manualPumpState === "ON"
-                }
-                onClick={() => setManualPumpState("ON")}
-                className={`inline-flex items-center justify-center gap-2 rounded-xl py-2.5 px-3 text-xs font-extrabold transition duration-200 ${
-                  manualPumpState === "ON"
-                    ? "bg-emerald-600 text-white shadow-lg shadow-emerald-600/25 ring-2 ring-emerald-400"
-                    : "bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-600 hover:text-white"
-                } disabled:cursor-not-allowed disabled:opacity-50`}
-              >
-                <Zap size={14} aria-hidden="true" />
-                Turn Pump ON
-              </button>
-              <button
-                type="button"
-                disabled={
-                  updating || !systemEnabled || manualPumpState === "OFF"
-                }
-                onClick={() => setManualPumpState("OFF")}
-                className={`inline-flex items-center justify-center gap-2 rounded-xl py-2.5 px-3 text-xs font-extrabold transition duration-200 ${
-                  manualPumpState === "OFF"
-                    ? "bg-slate-700 text-white shadow-md shadow-slate-700/20 ring-2 ring-slate-600"
-                    : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 hover:bg-slate-700 hover:text-white"
-                } disabled:cursor-not-allowed disabled:opacity-50`}
-              >
-                <Power size={14} aria-hidden="true" />
-                Turn Pump OFF
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Real-time Status Footer */}
-        <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
-          <span>Current Pump Status</span>
-          <span
-            className={`inline-flex items-center gap-1.5 font-bold ${
-              !isOnline
-                ? "text-rose-600 dark:text-rose-400"
-                : realPumpStatus === "ON"
-                ? "text-emerald-600 dark:text-emerald-400"
-                : "text-slate-600 dark:text-slate-400"
-            }`}
+        {!manualOnCheck.allowed && (
+          <p
+            className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-[11px] font-bold text-amber-800 ring-1 ring-amber-200/70 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-900/60"
+            role="status"
           >
-            <span
-              className={`size-2 rounded-full ${
-                !isOnline
-                  ? "bg-rose-500"
-                  : realPumpStatus === "ON"
-                  ? "animate-pulse bg-emerald-500"
-                  : "bg-slate-400"
-              }`}
-            />
-            {!isOnline ? "Offline" : realPumpStatus === "ON" ? "Running" : "Stopped"}
+            <CircleAlert size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+            <span className="min-w-0">{t(manualOnCheck.reasonKey)}</span>
+          </p>
+        )}
+      </section>
+
+      {/* Last command result */}
+      {lastCommand && (
+        <div
+          className={`mt-6 flex items-start gap-2 rounded-xl border p-3 text-[11px] font-bold ${
+            lastCommand.ok
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300"
+              : "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300"
+          }`}
+          role="status"
+          aria-live="polite"
+        >
+          {lastCommand.ok ? (
+            <CheckCircle2 size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+          ) : (
+            <XCircle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+          )}
+          <span className="min-w-0">
+            {t("lastCommand")}: {t(`command_${lastCommand.label}`)} ·{" "}
+            {lastCommand.ok ? t("commandAccepted") : lastCommand.message}
+            {formatTime(lastCommand.at, { locale: language }).hasValue && (
+              <span className="ms-1 opacity-70">
+                ({formatTime(lastCommand.at, { locale: language }).text})
+              </span>
+            )}
           </span>
         </div>
-      </div>
-    </section>
+      )}
+
+      <ConfirmDialog
+        open={Boolean(pendingConfirm)}
+        title={pendingConfirm ? t(pendingConfirm.titleKey) : ""}
+        description={pendingConfirm ? t(pendingConfirm.descriptionKey) : ""}
+        confirmLabel={pendingConfirm ? t(pendingConfirm.confirmKey) : ""}
+        cancelLabel={t("cancel")}
+        destructive={pendingConfirm?.destructive !== false}
+        loading={updating}
+        onConfirm={handleConfirm}
+        onCancel={() => setPendingConfirm(null)}
+      />
+    </article>
+  );
+}
+
+const TONE_ACTIVE = {
+  emerald: "border-emerald-500 bg-emerald-600 text-white shadow-md shadow-emerald-600/20",
+  rose: "border-rose-500 bg-rose-600 text-white shadow-md shadow-rose-600/20",
+  blue: "border-blue-500 bg-blue-600 text-white shadow-md shadow-blue-600/20",
+  amber: "border-amber-500 bg-amber-500 text-white shadow-md shadow-amber-500/20",
+};
+
+function ControlButton({ active, disabled, busy, onClick, tone, icon: Icon, label }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-pressed={active}
+      className={`flex min-h-[3rem] items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-extrabold transition focus:outline-none focus-visible:ring-4 focus-visible:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-45 dark:focus-visible:ring-blue-900/30 ${
+        active
+          ? TONE_ACTIVE[tone]
+          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+      }`}
+    >
+      {busy && active ? (
+        <LoaderCircle size={15} className="shrink-0 animate-spin" aria-hidden="true" />
+      ) : (
+        <Icon size={15} className="shrink-0" aria-hidden="true" />
+      )}
+      <span className="truncate">{label}</span>
+    </button>
   );
 }

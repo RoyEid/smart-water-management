@@ -4,7 +4,15 @@ import { networkInterfaces } from "node:os";
 import app from "./app.js";
 import connectDB from "./config/database.js";
 import { attachSocketServer } from "./realtime/socketServer.js";
-import { hydrateLatestReading } from "./services/ultrasonicReadingService.js";
+import {
+  hydrateLatestReading,
+  getLatestReading,
+} from "./services/ultrasonicReadingService.js";
+import { hydrateDeviceControlState } from "./services/deviceControlService.js";
+import {
+  hydrateOpenAlerts,
+  sweepOfflineDevices,
+} from "./services/alertService.js";
 
 const PORT = process.env.PORT || 5000;
 const HOST = "0.0.0.0";
@@ -27,8 +35,29 @@ server.on("error", (error) => {
 });
 
 // Connect to Database first
+// A device that goes silent stops driving the alert evaluation, so the offline
+// condition needs its own timer. 5 s is half the 10 s offline window, which is
+// frequent enough to notice the transition promptly without polling hard.
+const OFFLINE_SWEEP_INTERVAL_MS = 5_000;
+
 connectDB()
-  .then(() => hydrateLatestReading())
+  .then(() =>
+    Promise.all([
+      hydrateLatestReading(),
+      hydrateDeviceControlState(),
+      hydrateOpenAlerts(),
+    ])
+  )
+  .then(() => {
+    const offlineSweep = setInterval(() => {
+      sweepOfflineDevices(getLatestReading).catch((error) => {
+        console.error("[Alerts] Offline sweep failed:", error.message);
+      });
+    }, OFFLINE_SWEEP_INTERVAL_MS);
+
+    // Lets the process exit on Ctrl-C instead of being held open by the timer.
+    offlineSweep.unref?.();
+  })
   .then(() => {
     // 0.0.0.0 binds every interface, which is what lets the ESP32 reach the
     // backend over the LAN IP. Binding 127.0.0.1 would make it localhost-only.

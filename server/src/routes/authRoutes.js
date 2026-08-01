@@ -4,6 +4,7 @@ import rateLimit from "express-rate-limit";
 import passport from "../config/passport.js";
 import validateRequest from "../middleware/validateRequest.js";
 import authenticate from "../middleware/authenticate.js";
+import optionalAuth from "../middleware/optionalAuth.js";
 import { setAuthCookie } from "../utils/cookies.js";
 import {
   register,
@@ -16,10 +17,14 @@ import {
   verifyResetCode,
   resetPassword,
   updateProfile,
+  updateAvatar,
+  updatePreferences,
   changePassword,
   deleteAccount,
   signJWT,
 } from "../controllers/authController.js";
+import { recordAudit } from "../services/auditService.js";
+import { AUDIT_ACTIONS } from "../models/AuditLog.js";
 
 const router = Router();
 
@@ -159,6 +164,42 @@ const deleteAccountSchema = z
   })
   .strict();
 
+// Roughly 700 kB of base64, which comfortably covers a resized profile photo
+// while staying well inside a sane request size. The client downscales before
+// upload; this is the backstop, not the primary limit.
+const MAX_AVATAR_CHARS = 700_000;
+
+const avatarSchema = z
+  .object({
+    avatar: z
+      .string()
+      .max(MAX_AVATAR_CHARS, "Image is too large. Please choose a smaller photo.")
+      // Only inline raster data URLs. Rejecting arbitrary strings keeps a
+      // remote URL — or an SVG, which can carry script — out of the <img src>.
+      .regex(
+        /^data:image\/(png|jpeg|jpg|webp);base64,[A-Za-z0-9+/=]+$/,
+        "Avatar must be a PNG, JPEG or WebP image."
+      )
+      .or(z.literal("")),
+  })
+  .strict();
+
+const preferencesSchema = z
+  .object({
+    theme: z.enum(["system", "light", "dark"]).optional(),
+    language: z.enum(["en", "ar", "fr"]).optional(),
+    notificationPrefs: z
+      .object({
+        pumpAlerts: z.boolean().optional(),
+        deviceOfflineAlerts: z.boolean().optional(),
+        safetyAlerts: z.boolean().optional(),
+        emailNotifications: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
 const resetPasswordSchema = z
   .object({
     email: z.string().trim().email("Please enter a valid email address."),
@@ -178,24 +219,57 @@ router.get(
   })
 );
 
-router.get("/google/callback", (req, res, next) => {
-  passport.authenticate("google", { session: false }, (err, user, info) => {
-    const frontendUrl =
-      process.env.FRONTEND_URL ||
-      process.env.CLIENT_URL ||
-      "http://localhost:5173";
+/**
+ * Shared tail of both OAuth callbacks.
+ *
+ * A disabled account must be refused on every entry path, not just the local
+ * password form — otherwise "disable this user" would be trivially bypassed by
+ * signing in with Google.
+ */
+function completeOAuthLogin(provider) {
+  return (req, res, next) => {
+    passport.authenticate(provider, { session: false }, async (err, user, info) => {
+      const frontendUrl =
+        process.env.FRONTEND_URL ||
+        process.env.CLIENT_URL ||
+        "http://localhost:5173";
 
-    if (err || !user) {
-      const errorType = info?.message || "google";
-      return res.redirect(`${frontendUrl}/login?oauthError=${errorType}`);
-    }
+      if (err || !user) {
+        const errorType = info?.message || provider;
+        return res.redirect(`${frontendUrl}/login?oauthError=${errorType}`);
+      }
 
-    const token = signJWT(user._id, user.role);
-    setAuthCookie(res, token, true);
+      if (user.isActive === false) {
+        return res.redirect(`${frontendUrl}/login?oauthError=account_disabled`);
+      }
 
-    return res.redirect(`${frontendUrl}/dashboard`);
-  })(req, res, next);
-});
+      const token = signJWT(user._id, user.role);
+      setAuthCookie(res, token, true);
+
+      try {
+        user.lastLoginAt = new Date();
+        await user.save();
+        await recordAudit({
+          req,
+          actor: user,
+          action: AUDIT_ACTIONS.LOGIN,
+          targetType: "account",
+          targetId: user._id,
+          targetLabel: user.email,
+          metadata: { provider },
+        });
+      } catch (auditError) {
+        // The session is already valid; failing to record it must not send the
+        // user back to the login page.
+        console.error(`[Auth] ${provider} login bookkeeping failed:`, auditError.message);
+      }
+
+      return res.redirect(`${frontendUrl}/dashboard`);
+    })(req, res, next);
+  };
+}
+
+router.get("/google/callback", completeOAuthLogin("google"));
 
 /* GitHub OAuth */
 
@@ -208,24 +282,7 @@ router.get(
   })
 );
 
-router.get("/github/callback", (req, res, next) => {
-  passport.authenticate("github", { session: false }, (err, user, info) => {
-    const frontendUrl =
-      process.env.FRONTEND_URL ||
-      process.env.CLIENT_URL ||
-      "http://localhost:5173";
-
-    if (err || !user) {
-      const errorType = info?.message || "github";
-      return res.redirect(`${frontendUrl}/login?oauthError=${errorType}`);
-    }
-
-    const token = signJWT(user._id, user.role);
-    setAuthCookie(res, token, true);
-
-    return res.redirect(`${frontendUrl}/dashboard`);
-  })(req, res, next);
-});
+router.get("/github/callback", completeOAuthLogin("github"));
 
 /* Local authentication */
 
@@ -257,7 +314,7 @@ router.post(
   login
 );
 
-router.post("/logout", logout);
+router.post("/logout", optionalAuth, logout);
 
 router.get("/me", authenticate, me);
 
@@ -298,6 +355,22 @@ router.patch(
   changePasswordLimiter,
   validateRequest(changePasswordSchema),
   changePassword
+);
+
+router.patch(
+  "/avatar",
+  authenticate,
+  profileLimiter,
+  validateRequest(avatarSchema),
+  updateAvatar
+);
+
+router.patch(
+  "/preferences",
+  authenticate,
+  profileLimiter,
+  validateRequest(preferencesSchema),
+  updatePreferences
 );
 
 router.delete(

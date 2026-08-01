@@ -26,7 +26,9 @@ function AuthPage() {
           onRegister={showRegister}
         />
       }
-      registerForm={<RegisterPage onLogin={showLogin} />}
+      // Keyed on the pathname like the login form, so moving between the two
+      // screens remounts the form and clears any typed password.
+      registerForm={<RegisterPage key={location.pathname} onLogin={showLogin} />}
     />
   );
 }

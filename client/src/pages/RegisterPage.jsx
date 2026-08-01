@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Link, useNavigate, useLocation } from "react-router-dom";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import {
   AlertCircle,
   ArrowRight,
@@ -18,18 +18,10 @@ import OAuthButtons from "../components/OAuthButtons";
 function RegisterPage() {
   const navigate = useNavigate();
 
-  const location = useLocation();
-
-  useEffect(() => {
-    setFormData((current) => ({
-      ...current,
-      password: "",
-      confirmPassword: "",
-    }));
-    setShowPassword(false);
-    setShowConfirmPassword(false);
-  }, [location.pathname]);
-
+  // Switching between /login and /register remounts this component (AuthPage
+  // keys both forms on the pathname), which clears the password fields as a
+  // natural consequence of the remount. The effect that used to reset them
+  // here ran before its own state was declared and is no longer needed.
   const [formData, setFormData] = useState({
     name: "",
     email: "",

@@ -21,14 +21,42 @@ The dashboard first requests `GET /api/sensors/ultrasonic/latest` with the exist
 ```text
 smart-water-management/
 ├── client/                       React, Vite, Tailwind CSS dashboard and auth UI
+│   └── src/
+│       ├── components/           Layout, dashboard, settings and shared UI primitives
+│       ├── context/              Auth, theme, language, toast and telemetry providers
+│       ├── hooks/                useTankData, useDeviceControl, useAlerts, useAsyncData
+│       ├── pages/                One component per route, plus pages/admin/
+│       ├── services/             Axios API clients and the single Socket.IO instance
+│       └── utils/                Telemetry formatting and pump-safety reasoning
 ├── server/                       Express, MongoDB/Mongoose, JWT cookie authentication
+│   └── src/
+│       ├── controllers/          Request handlers
+│       ├── middleware/           requireAuth, requireAdmin, validation, error handler
+│       ├── models/               User, UltrasonicReading, Device, Alert, AuditLog
+│       ├── routes/               auth, sensors, device control, devices, alerts, admin
+│       ├── scripts/createAdmin   First-administrator bootstrap
+│       └── services/             Telemetry, alerting, device registry, audit
 ├── esp32/
 │   ├── esp32.ino                 Complete ESP32-S3 ultrasonic sender
 │   ├── secrets.example.h         Safe credential template
 │   └── secrets.h                 Local ignored credentials (never commit)
-├── package.json                  Root install and development scripts
+├── package.json                  Root install, development and verification scripts
 └── README.md
 ```
+
+### Application routes
+
+| Route | Access | Purpose |
+| --- | --- | --- |
+| `/dashboard` | signed in | Both tanks, volumes, pump reasoning, active alerts |
+| `/pump-control` | signed in | Mode, manual command, safety interlocks |
+| `/live-monitoring` | signed in | Raw telemetry and stream diagnostics |
+| `/water-flow` | signed in | Flow rate and session transfer |
+| `/history` | signed in | Filtered, paginated telemetry with CSV export |
+| `/alerts` | signed in | Alert list with severity and read filters |
+| `/devices`, `/devices/:id` | signed in | Device registry and per-device detail |
+| `/settings` | signed in | Profile, security, accounts, preferences, notifications |
+| `/admin/*` | admin only | Overview, users, devices, telemetry, activity, configuration |
 
 ## Electrical safety warning
 
@@ -229,10 +257,54 @@ Useful negative tests:
 1. Open `http://localhost:5173/register` and create an account if needed.
 2. With the default `EMAIL_MODE=console`, read the six-digit verification code from the backend terminal and verify the account.
 3. Log in. Successful login redirects directly to `/dashboard`.
-4. The page displays one sensor card with the distance, Connected/Offline state, local last-updated time, and Logout button.
+4. The dashboard shows both tank levels, the derived volume against the 8 L capacity, the pump state, the automatic-control reasoning and any active alerts.
 5. Move an object in front of the sensor. Confirm that Serial Monitor prints about two values per second and the dashboard changes to the same value without a page refresh.
 
-The JWT remains in the existing HTTP-only cookie. Axios sends that cookie with the protected GET request; the secret token is not exposed to React. Opening `/dashboard` without a valid cookie redirects to `/login`.
+The JWT remains in the existing HTTP-only cookie. Axios sends that cookie with the protected GET request; the secret token is not exposed to React. Opening any signed-in page without a valid cookie redirects to `/login`.
+
+Values the device has not reported are shown as **Waiting for data** or **Not available**. They are never filled in with `0`, `50%`, or any other placeholder number, so anything that looks like a reading is a reading.
+
+## 11a. Create the first administrator
+
+Registration always creates a standard `user` — the public endpoint can never mint an admin. Create the first one from the command line, once per installation:
+
+```bash
+# Promote an account that already exists
+npm run create-admin -- you@example.com
+
+# Or create a new, pre-verified admin account
+npm run create-admin -- you@example.com "Your Name" "StrongPass1"
+```
+
+Signing in as that account adds **Admin Dashboard** to the sidebar and unlocks `/admin`. Every `/api/admin/*` endpoint checks the role server-side on each request, reading it from the database rather than the token — so demoting an admin takes effect immediately, and hiding the link is only a convenience.
+
+Admin capabilities: user management (search, filter, promote/demote, enable/disable, delete, resend verification), device registry and renaming, telemetry statistics, the audit log, and a read-only view of the runtime configuration.
+
+The last remaining administrator cannot be demoted, disabled, or deleted — through the admin panel or through Settings › Danger Zone — so an installation cannot be locked out of its own admin area.
+
+## 11b. Roles and permissions
+
+| Capability | user | admin |
+| --- | --- | --- |
+| Dashboard, live monitoring, water flow, history, alerts | yes | yes |
+| Pump control (mode, manual command, system enable) | yes | yes |
+| View devices and telemetry history, export CSV | yes | yes |
+| Mark alerts read | yes | yes |
+| Rename a device | no | yes |
+| Clear resolved alerts | no | yes |
+| `/admin` — users, devices, telemetry, activity, configuration | no | yes |
+
+A disabled account is refused at every entry path, including Google and GitHub sign-in, and its existing session stops working on the next request.
+
+## 11c. Verifying the build
+
+```bash
+npm run verify     # backend syntax + frontend lint + all tests + production build
+npm test           # unit tests only (41 tests, no database required)
+npm run lint       # frontend lint only
+```
+
+`npm run test:integration --prefix server` additionally exercises the auth endpoints over HTTP; it needs the backend and MongoDB running, and it creates and removes its own `test_user@example.com` accounts.
 
 ## 12. Troubleshooting
 
