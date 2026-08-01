@@ -1,3 +1,5 @@
+import Readout from "./Readout";
+
 const accents = {
   cyan: "bg-cyan-50 dark:bg-cyan-950/80 text-cyan-700 dark:text-cyan-300 ring-cyan-200/60 dark:ring-cyan-800/60 group-hover:bg-cyan-500 group-hover:text-white",
   blue: "bg-blue-50 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 ring-blue-200/60 dark:ring-blue-800/60 group-hover:bg-blue-600 group-hover:text-white",
@@ -7,27 +9,29 @@ const accents = {
   emerald: "bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 ring-emerald-200/60 dark:ring-emerald-800/60 group-hover:bg-emerald-600 group-hover:text-white",
 };
 
+/**
+ * Takes a formatted value object from telemetryFormat rather than a
+ * pre-stringified number, so the "no value" case is handled by Readout in one
+ * place instead of by each caller inventing its own fallback.
+ */
 export default function MetricCard({
   icon: Icon,
   label,
-  value,
-  unit,
+  formatted,
   detail,
   accent = "blue",
+  placeholderKind = "waiting",
 }) {
   return (
-    <article className="group relative overflow-hidden rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 p-5 shadow-sm shadow-slate-900/5 transition duration-300 hover:-translate-y-1 hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-xl hover:shadow-slate-900/10">
+    <article className="group relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm shadow-slate-900/5 transition duration-300 hover:-translate-y-1 hover:border-slate-300 hover:shadow-xl hover:shadow-slate-900/10 dark:border-slate-800 dark:bg-slate-900/90 dark:hover:border-slate-700">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">{label}</p>
-          <p className="mt-2 truncate text-3xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100">
-            {value}
-            {unit && (
-              <span className="ml-1 text-sm font-semibold text-slate-400 dark:text-slate-500">
-                {unit}
-              </span>
-            )}
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-xs font-semibold text-slate-500 dark:text-slate-400">
+            {label}
           </p>
+          <div className="mt-2">
+            <Readout formatted={formatted} placeholderKind={placeholderKind} size="lg" />
+          </div>
         </div>
         <span
           className={`grid size-10 shrink-0 place-items-center rounded-xl ring-1 transition-all duration-300 group-hover:scale-105 group-hover:shadow-md ${accents[accent]}`}
@@ -37,7 +41,7 @@ export default function MetricCard({
       </div>
 
       {detail && (
-        <div className="mt-4 flex items-center gap-1.5 border-t border-slate-100/80 dark:border-slate-800/80 pt-3 text-[11px] font-semibold text-slate-400 dark:text-slate-500">
+        <div className="mt-4 flex items-center gap-1.5 border-t border-slate-100/80 pt-3 text-[11px] font-semibold text-slate-400 dark:border-slate-800/80 dark:text-slate-500">
           <span className="truncate">{detail}</span>
         </div>
       )}

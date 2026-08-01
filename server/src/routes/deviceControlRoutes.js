@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import rateLimit from "express-rate-limit";
 import {
   getDeviceControl,
   updateDeviceControl,
@@ -22,32 +23,50 @@ const deviceControlSchema = z
   })
   .strict();
 
-function authenticateControlReader(req, res, next) {
+/**
+ * Bounds how fast pump commands can be issued. Generous enough that a user
+ * toggling controls never hits it, tight enough that a stuck client cannot
+ * hammer the relay state. Reads are deliberately not limited: the ESP32 polls
+ * the GET route every 2 s and must never be throttled.
+ */
+const controlWriteLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  message: {
+    message: "Too many control commands. Please wait a moment and try again.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+/**
+ * Two callers share this endpoint: the ESP32 (device key header) and the
+ * dashboard (session cookie). The header decides which credential is checked,
+ * so neither path can be satisfied by the other's credential.
+ *
+ * Previously this existed twice under two names with identical bodies.
+ */
+function authenticateControlClient(req, res, next) {
   if (req.get("x-device-key")) {
     return authenticateDevice(req, res, next);
   }
   return authenticate(req, res, next);
 }
 
-function authenticateControlWriter(req, res, next) {
-  if (req.get("x-device-key")) {
-    return authenticateDevice(req, res, next);
-  }
-  return authenticate(req, res, next);
-}
-
-router.get("/", authenticateControlReader, getDeviceControl);
+router.get("/", authenticateControlClient, getDeviceControl);
 
 router.put(
   "/",
-  authenticateControlWriter,
+  authenticateControlClient,
+  controlWriteLimiter,
   validateRequest(deviceControlSchema),
   updateDeviceControl
 );
 
 router.post(
   "/",
-  authenticateControlWriter,
+  authenticateControlClient,
+  controlWriteLimiter,
   validateRequest(deviceControlSchema),
   updateDeviceControl
 );

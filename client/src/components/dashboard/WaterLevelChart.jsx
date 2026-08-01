@@ -1,30 +1,55 @@
 import { useState } from "react";
-import { Activity, RotateCw, TrendingUp, Waves } from "lucide-react";
+import { TrendingUp } from "lucide-react";
+import { hasValue } from "../../utils/telemetryFormat";
+import { useLanguage } from "../../context/LanguageContext";
 
+/**
+ * Recent telemetry as three series.
+ *
+ * A reading that did not include a level is skipped rather than plotted as 0 —
+ * substituting zero would draw a line dropping to empty and read as a real
+ * measurement of an empty tank. Each series keeps its own x-position so a gap
+ * in one series does not shift the others.
+ */
 export default function WaterLevelChart({ readings = [] }) {
+  const { t } = useLanguage();
   const [selectedSeries, setSelectedSeries] = useState("all"); // "all" | "upper" | "lower" | "pump"
 
-  const upperValues = readings.map((item) => item?.upperTank?.percentage ?? 0);
-  const lowerValues = readings.map((item) => item?.lowerTank?.percentage ?? 0);
-  const pumpValues = readings.map((item) => (item?.pumpStatus === "ON" ? 100 : 0));
+  const total = Math.max(readings.length - 1, 1);
 
-  const buildPoints = (values) => {
-    if (!values || values.length === 0) return "0,100 100,100";
-    return values
+  const buildSeries = (extract) =>
+    readings
+      .map((item, index) => ({ value: extract(item), index }))
+      .filter((point) => hasValue(point.value));
+
+  const upperSeries = buildSeries((item) => item?.upperTank?.percentage);
+  const lowerSeries = buildSeries((item) => item?.lowerTank?.percentage);
+  // The pump series is derived from a reported ON/OFF, so a reading with no
+  // pump status is skipped rather than drawn as OFF.
+  const pumpSeries = buildSeries((item) =>
+    item?.pumpStatus === "ON" ? 100 : item?.pumpStatus === "OFF" ? 0 : null
+  );
+
+  const buildPoints = (series) => {
+    // A single point cannot form a polyline; it is rendered as a dot instead.
+    if (series.length === 0) return "";
+    return series
       .map(
-        (val, index) =>
-          `${(index / Math.max(values.length - 1, 1)) * 100},${100 - Math.min(100, Math.max(0, val))}`
+        (point) =>
+          `${(point.index / total) * 100},${100 - Math.min(100, Math.max(0, point.value))}`
       )
       .join(" ");
   };
 
-  const upperPoints = buildPoints(upperValues);
-  const lowerPoints = buildPoints(lowerValues);
-  const pumpPoints = buildPoints(pumpValues);
+  const upperPoints = buildPoints(upperSeries);
+  const lowerPoints = buildPoints(lowerSeries);
+  const pumpPoints = buildPoints(pumpSeries);
 
-  const latestUpper = upperValues.at(-1);
-  const latestLower = lowerValues.at(-1);
-  const latestPump = readings.at(-1)?.pumpStatus || "OFF";
+  const latestUpper = upperSeries.at(-1)?.value;
+  const latestLower = lowerSeries.at(-1)?.value;
+  const latestPump = readings.at(-1)?.pumpStatus ?? null;
+
+  const hasAnyData = upperSeries.length > 0 || lowerSeries.length > 0;
 
   return (
     <section className="group overflow-hidden rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 p-6 shadow-sm shadow-slate-900/5 transition duration-300 hover:-translate-y-0.5 hover:shadow-xl sm:p-7">
@@ -94,19 +119,19 @@ export default function WaterLevelChart({ readings = [] }) {
         {(selectedSeries === "all" || selectedSeries === "upper") && (
           <div className="flex items-center gap-2 text-cyan-600 dark:text-cyan-400 font-bold">
             <span className="size-2.5 rounded-full bg-cyan-500 ring-2 ring-cyan-200 dark:ring-cyan-800" />
-            Upper Tank: {typeof latestUpper === "number" ? `${latestUpper.toFixed(1)}%` : "--"}
+            Upper Tank: {hasValue(latestUpper) ? `${latestUpper.toFixed(1)}%` : t("waitingForData")}
           </div>
         )}
         {(selectedSeries === "all" || selectedSeries === "lower") && (
           <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-bold">
             <span className="size-2.5 rounded-full bg-indigo-600 ring-2 ring-indigo-200 dark:ring-indigo-800" />
-            Lower Tank: {typeof latestLower === "number" ? `${latestLower.toFixed(1)}%` : "--"}
+            Lower Tank: {hasValue(latestLower) ? `${latestLower.toFixed(1)}%` : t("waitingForData")}
           </div>
         )}
         {(selectedSeries === "all" || selectedSeries === "pump") && (
           <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-bold">
             <span className="size-2.5 rounded-full bg-emerald-500 ring-2 ring-emerald-200 dark:ring-emerald-800" />
-            Pump State: {latestPump}
+            Pump State: {latestPump ?? t("waitingForData")}
           </div>
         )}
       </div>
@@ -149,8 +174,9 @@ export default function WaterLevelChart({ readings = [] }) {
               </linearGradient>
             </defs>
 
-            {/* Upper Tank Series */}
-            {(selectedSeries === "all" || selectedSeries === "upper") && (
+            {/* Upper Tank Series. Guarded on a non-empty series: an empty
+                points attribute would render a stray shape at the origin. */}
+            {(selectedSeries === "all" || selectedSeries === "upper") && upperPoints && (
               <>
                 <polygon fill="url(#upperGradient)" points={`0,100 ${upperPoints} 100,100`} />
                 <polyline
@@ -165,7 +191,7 @@ export default function WaterLevelChart({ readings = [] }) {
             )}
 
             {/* Lower Tank Series */}
-            {(selectedSeries === "all" || selectedSeries === "lower") && (
+            {(selectedSeries === "all" || selectedSeries === "lower") && lowerPoints && (
               <>
                 <polygon fill="url(#lowerGradient)" points={`0,100 ${lowerPoints} 100,100`} />
                 <polyline
@@ -180,7 +206,7 @@ export default function WaterLevelChart({ readings = [] }) {
             )}
 
             {/* Pump Digital State Series */}
-            {(selectedSeries === "all" || selectedSeries === "pump") && (
+            {(selectedSeries === "all" || selectedSeries === "pump") && pumpPoints && (
               <polyline
                 fill="none"
                 stroke="#10b981"
@@ -192,6 +218,16 @@ export default function WaterLevelChart({ readings = [] }) {
               />
             )}
           </svg>
+
+          {/* Nothing plotted yet: say so, rather than showing an empty grid
+              that reads like a flat line at zero. */}
+          {!hasAnyData && (
+            <div className="absolute inset-0 grid place-items-center">
+              <p className="rounded-xl bg-white/80 px-3 py-1.5 text-xs font-bold text-slate-400 backdrop-blur-sm dark:bg-slate-900/80 dark:text-slate-500">
+                {t("waitingForData")}
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </section>

@@ -3,6 +3,8 @@ import {
   setDeviceControlState,
 } from "../services/deviceControlService.js";
 import { emitDeviceControlChanged } from "../realtime/socketServer.js";
+import { recordAudit } from "../services/auditService.js";
+import { AUDIT_ACTIONS } from "../models/AuditLog.js";
 
 export function getDeviceControl(req, res) {
   const control = getDeviceControlState();
@@ -14,6 +16,7 @@ export function getDeviceControl(req, res) {
 }
 
 export function updateDeviceControl(req, res) {
+  const previous = getDeviceControlState();
   const { state, changed } = setDeviceControlState(req.body);
 
   if (changed) {
@@ -21,6 +24,12 @@ export function updateDeviceControl(req, res) {
     console.log(
       `[Device Control] System ${state.systemEnabled ? "ENABLED" : "DISABLED"} | Mode: ${state.pumpMode} | Manual: ${state.manualPumpState}`
     );
+    // Only user-initiated changes are audited. The ESP32 authenticates with the
+    // device key and only ever reads this endpoint, so a device request never
+    // produces an entry attributed to a person.
+    if (req.user) {
+      auditControlChange(req, previous, state);
+    }
   }
 
   res.status(200).json({
@@ -28,4 +37,43 @@ export function updateDeviceControl(req, res) {
     control: state,
     ...state,
   });
+}
+
+/**
+ * One audit row per field that actually changed, so "switched to MANUAL and
+ * turned the pump on" reads as two distinct, individually filterable actions
+ * rather than one opaque "control updated".
+ */
+function auditControlChange(req, previous, next) {
+  if (previous.systemEnabled !== next.systemEnabled) {
+    recordAudit({
+      req,
+      action: next.systemEnabled
+        ? AUDIT_ACTIONS.SYSTEM_ENABLED
+        : AUDIT_ACTIONS.SYSTEM_DISABLED,
+      targetType: "device",
+      targetId: "tank-01",
+      metadata: { systemEnabled: next.systemEnabled },
+    });
+  }
+
+  if (previous.pumpMode !== next.pumpMode) {
+    recordAudit({
+      req,
+      action: AUDIT_ACTIONS.PUMP_MODE_CHANGED,
+      targetType: "device",
+      targetId: "tank-01",
+      metadata: { from: previous.pumpMode, to: next.pumpMode },
+    });
+  }
+
+  if (previous.manualPumpState !== next.manualPumpState) {
+    recordAudit({
+      req,
+      action: AUDIT_ACTIONS.MANUAL_PUMP_COMMAND,
+      targetType: "device",
+      targetId: "tank-01",
+      metadata: { command: next.manualPumpState, mode: next.pumpMode },
+    });
+  }
 }

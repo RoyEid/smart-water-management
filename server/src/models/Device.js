@@ -1,0 +1,50 @@
+import mongoose from "mongoose";
+
+/**
+ * Registry of every device that has ever reported telemetry.
+ *
+ * Rows are created lazily by the telemetry pipeline, so no manual provisioning
+ * step is needed and the current single device (tank-01) appears automatically.
+ * The schema is already multi-device: nothing here assumes one row.
+ */
+const deviceSchema = new mongoose.Schema(
+  {
+    deviceId: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
+      index: true,
+    },
+    // Admin-editable label. Falls back to the deviceId in the UI when empty.
+    displayName: {
+      type: String,
+      trim: true,
+      maxlength: 60,
+      default: "",
+    },
+    // Only set when a device actually reports it. The current ultrasonic
+    // firmware does not send a version, so this stays null and the UI shows
+    // "Not reported" instead of inventing a number.
+    firmwareVersion: {
+      type: String,
+      default: null,
+    },
+    lastSeenAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+    firstSeenAt: {
+      type: Date,
+      default: Date.now,
+    },
+    totalReadings: {
+      type: Number,
+      default: 0,
+    },
+  },
+  { timestamps: true, versionKey: false }
+);
+
+export default mongoose.model("Device", deviceSchema);

@@ -1,5 +1,4 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState } from "react";
 import {
   User,
   Lock,
@@ -8,12 +7,11 @@ import {
   Bell,
   Trash2,
   LoaderCircle,
-  AlertCircle,
   ChevronDown,
   Check,
 } from "lucide-react";
-import api from "../services/api";
 import { useLanguage } from "../context/LanguageContext";
+import { useAuth } from "../context/AuthContext";
 import ProfileSection from "../components/settings/ProfileSection";
 import SecuritySection from "../components/settings/SecuritySection";
 import ConnectedAccountsSection from "../components/settings/ConnectedAccountsSection";
@@ -21,14 +19,14 @@ import PreferencesSection from "../components/settings/PreferencesSection";
 import NotificationsSection from "../components/settings/NotificationsSection";
 import DangerZoneSection from "../components/settings/DangerZoneSection";
 
-export default function SettingsPage({ logout, loggingOut }) {
+export default function SettingsPage() {
   const { t } = useLanguage();
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  // The user already lives in AuthContext, loaded once at startup — this page
+  // no longer issues its own /auth/me request, and an update made here is
+  // immediately visible in the header and the profile menu.
+  const { user, isLoading, logout, applyUser } = useAuth();
   const [activeSection, setActiveSection] = useState("profile");
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const navigate = useNavigate();
 
   const sections = [
     { id: "profile", labelKey: "profile", icon: User },
@@ -39,48 +37,20 @@ export default function SettingsPage({ logout, loggingOut }) {
     { id: "danger", labelKey: "dangerZone", icon: Trash2, danger: true },
   ];
 
-  useEffect(() => {
-    let mounted = true;
-    async function fetchUser() {
-      try {
-        const res = await api.get("/auth/me");
-        if (mounted) setUser(res.data.user);
-      } catch (err) {
-        if (err.response?.status === 401) {
-          navigate("/login", { replace: true });
-        } else if (mounted) {
-          setError("Unable to load your profile.");
-        }
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    }
-    fetchUser();
-    return () => {
-      mounted = false;
-    };
-  }, [navigate]);
-
-  function handleUserUpdate(updated) {
-    setUser((prev) => ({ ...prev, ...updated }));
-  }
-
-  if (loading) {
+  if (isLoading || !user) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <LoaderCircle size={28} className="animate-spin text-blue-600 dark:text-cyan-400" />
+      <div className="flex items-center justify-center py-20" role="status" aria-live="polite">
+        <LoaderCircle
+          size={28}
+          className="animate-spin text-blue-600 dark:text-cyan-400"
+          aria-hidden="true"
+        />
+        <span className="sr-only">{t("loading")}</span>
       </div>
     );
   }
 
-  if (error) {
-    return (
-      <div className="mx-auto max-w-lg rounded-2xl border border-red-200 bg-red-50 dark:border-red-900/60 dark:bg-red-950/40 p-6 text-center">
-        <AlertCircle size={28} className="mx-auto text-red-500" />
-        <p className="mt-3 text-sm font-bold text-red-800 dark:text-red-300">{error}</p>
-      </div>
-    );
-  }
+  const handleUserUpdate = applyUser;
 
   const currentSection = sections.find((s) => s.id === activeSection) || sections[0];
   const CurrentSectionIcon = currentSection.icon;
@@ -266,7 +236,7 @@ export default function SettingsPage({ logout, loggingOut }) {
             <ProfileSection user={user} onUserUpdate={handleUserUpdate} />
           )}
           {activeSection === "security" && (
-            <SecuritySection user={user} logout={logout} loggingOut={loggingOut} />
+            <SecuritySection user={user} logout={logout} />
           )}
           {activeSection === "connected" && (
             <ConnectedAccountsSection user={user} />

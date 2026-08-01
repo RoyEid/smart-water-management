@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useRef } from "react";
 import {
   User,
   Mail,
@@ -12,16 +12,67 @@ import {
 import SettingsCard from "./SettingsCard";
 import api from "../../services/api";
 import { useLanguage } from "../../context/LanguageContext";
+import { useToast } from "../../context/ToastContext";
+import { fileToAvatarDataUrl } from "../../utils/imageResize";
+import { getApiErrorMessage } from "../../utils/apiError";
 
 export default function ProfileSection({ user, onUserUpdate }) {
   const { t, language } = useLanguage();
+  const toast = useToast();
   const [name, setName] = useState(user?.name || "");
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState(null);
+  const [avatarLoading, setAvatarLoading] = useState(false);
+  const fileInputRef = useRef(null);
 
-  useEffect(() => {
+  // React's documented way to reset a controlled field when the prop behind it
+  // changes: compare during render and adjust, rather than writing the value
+  // back from an effect after a render has already gone out with the old one.
+  const [lastSyncedName, setLastSyncedName] = useState(user?.name || "");
+  if (lastSyncedName !== (user?.name || "")) {
+    setLastSyncedName(user?.name || "");
     setName(user?.name || "");
-  }, [user?.name]);
+  }
+
+  /**
+   * Downscales in the browser before upload, so an 8 MP phone photo becomes a
+   * small square rather than being rejected by the request size limit.
+   */
+  async function handleAvatarChange(event) {
+    const file = event.target.files?.[0];
+    // Cleared immediately so re-selecting the same file still fires onChange.
+    event.target.value = "";
+    if (!file) return;
+
+    setAvatarLoading(true);
+    try {
+      const dataUrl = await fileToAvatarDataUrl(file);
+      const res = await api.patch("/auth/avatar", { avatar: dataUrl });
+      onUserUpdate?.(res.data.user);
+      toast.success(res.data.message || t("photoUpdated"));
+    } catch (error) {
+      // A local processing failure has its own message; a request failure goes
+      // through the shared API error mapper.
+      toast.error(
+        error.response ? getApiErrorMessage(error, t("photoUploadFailed")) : error.message
+      );
+    } finally {
+      setAvatarLoading(false);
+    }
+  }
+
+  async function handleRemoveAvatar() {
+    setAvatarLoading(true);
+    try {
+      const res = await api.patch("/auth/avatar", { avatar: "" });
+      onUserUpdate?.(res.data.user);
+      toast.success(res.data.message || t("photoRemoved"));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, t("photoUploadFailed")));
+    } finally {
+      setAvatarLoading(false);
+    }
+  }
 
   const initials = (user?.name || "U")
     .split(" ")
@@ -79,27 +130,50 @@ export default function ProfileSection({ user, onUserUpdate }) {
             {hasAvatar ? (
               <img
                 src={user.avatar}
-                alt={user.name}
-                className="size-20 rounded-2xl border-2 border-slate-200 dark:border-slate-700 object-cover shadow-sm"
+                alt=""
+                className="size-20 rounded-2xl border-2 border-slate-200 object-cover shadow-sm dark:border-slate-700"
               />
             ) : (
-              <div className="grid size-20 place-items-center rounded-2xl border-2 border-slate-200 dark:border-slate-700 bg-gradient-to-br from-blue-500 to-cyan-500 text-xl font-extrabold text-white shadow-sm">
+              <div className="grid size-20 place-items-center rounded-2xl border-2 border-slate-200 bg-gradient-to-br from-blue-500 to-cyan-500 text-xl font-extrabold text-white shadow-sm dark:border-slate-700">
                 {initials}
               </div>
             )}
           </div>
-          <button
-            type="button"
-            disabled
-            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold text-slate-400 dark:text-slate-500 ring-1 ring-slate-200 dark:ring-slate-700/80 cursor-not-allowed"
-            title={t("soonText")}
+
+          {/* The real input is visually hidden but still focusable, so the
+              styled label works for pointer and keyboard alike. */}
+          <input
+            ref={fileInputRef}
+            id="settings-avatar"
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            onChange={handleAvatarChange}
+            className="sr-only"
+          />
+          <label
+            htmlFor="settings-avatar"
+            className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-50 focus-within:ring-2 focus-within:ring-blue-500 dark:text-slate-300 dark:ring-slate-700/80 dark:hover:bg-slate-800 ${
+              avatarLoading ? "pointer-events-none opacity-60" : ""
+            }`}
           >
-            <Camera size={13} aria-hidden="true" />
+            {avatarLoading ? (
+              <LoaderCircle size={13} className="animate-spin" aria-hidden="true" />
+            ) : (
+              <Camera size={13} aria-hidden="true" />
+            )}
             {t("uploadPhoto")}
-            <span className="rounded bg-cyan-50 dark:bg-cyan-950/80 px-1 py-0.5 text-[9px] font-extrabold uppercase text-cyan-600 dark:text-cyan-400">
-              {t("comingSoon")}
-            </span>
-          </button>
+          </label>
+
+          {hasAvatar && (
+            <button
+              type="button"
+              onClick={handleRemoveAvatar}
+              disabled={avatarLoading}
+              className="text-[11px] font-bold text-rose-600 transition hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 disabled:opacity-50 dark:text-rose-400"
+            >
+              {t("removePhoto")}
+            </button>
+          )}
         </div>
 
         {/* Profile form */}
