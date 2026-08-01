@@ -1,148 +1,119 @@
-import { AlertTriangle, CheckCircle2, CircleX, Info, ShieldAlert, WifiOff } from "lucide-react";
+import { Link } from "react-router-dom";
+import {
+  AlertTriangle,
+  ArrowRight,
+  CheckCircle2,
+  Info,
+  ShieldAlert,
+} from "lucide-react";
+import { useLanguage } from "../../context/LanguageContext";
+import { alertMessageKey } from "../../utils/alertCatalog";
+import { formatRelativeAge } from "../../utils/telemetryFormat";
+import { Skeleton } from "../ui/StateViews";
 
-export default function AlertsPanel({ reading, isOnline, backendError = "" }) {
-  const alerts = [];
+const SEVERITY_STYLES = {
+  critical: {
+    icon: ShieldAlert,
+    border: "border-rose-200/90 bg-rose-50/80 text-rose-900 dark:border-rose-800/80 dark:bg-rose-950/40 dark:text-rose-200",
+    iconBg: "bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300",
+  },
+  warning: {
+    icon: AlertTriangle,
+    border: "border-amber-200/90 bg-amber-50/80 text-amber-900 dark:border-amber-800/80 dark:bg-amber-950/40 dark:text-amber-200",
+    iconBg: "bg-amber-100 text-amber-700 dark:bg-amber-950/80 dark:text-amber-300",
+  },
+  info: {
+    icon: Info,
+    border: "border-sky-200/90 bg-sky-50/80 text-sky-900 dark:border-sky-800/80 dark:bg-sky-950/40 dark:text-sky-200",
+    iconBg: "bg-sky-100 text-sky-700 dark:bg-sky-950/80 dark:text-sky-300",
+  },
+};
 
-  // 1. ESP32 Offline Alert
-  if (!isOnline) {
-    alerts.push({
-      id: "esp32-offline",
-      label: "ESP32 Offline",
-      text: "Telemetry timeout: ESP32 device has not reported data for over 10 seconds.",
-      type: "error",
-      icon: WifiOff,
-    });
-  }
+/**
+ * Shows the alerts the backend has actually raised.
+ *
+ * Previously this panel derived its own alert list from the current reading on
+ * every render, which meant nothing was persisted, nothing could be marked
+ * read, and the panel and the alerts page could disagree. It now renders the
+ * same server-side alerts that feed the notification bell and /alerts.
+ */
+export default function AlertsPanel({ alerts = [], isLoading = false, limit = 4 }) {
+  const { t } = useLanguage();
 
-  // 2. Backend Disconnected
-  if (backendError) {
-    alerts.push({
-      id: "backend-disconnected",
-      label: "Backend Disconnected",
-      text: backendError,
-      type: "error",
-      icon: CircleX,
-    });
-  }
-
-  // 3. Upper Sensor Error
-  if (
-    reading?.upperTank?.tankStatus === "Sensor Error" ||
-    reading?.failedSensor === "UPPER"
-  ) {
-    alerts.push({
-      id: "upper-sensor-error",
-      label: "Upper Sensor Error",
-      text: "Ultrasonic sensor on Upper Tank (TRIG 7 / ECHO 15) failed to read distance.",
-      type: "error",
-      icon: ShieldAlert,
-    });
-  }
-
-  // 4. Lower Sensor Error
-  if (
-    reading?.lowerTank?.tankStatus === "Sensor Error" ||
-    reading?.failedSensor === "LOWER"
-  ) {
-    alerts.push({
-      id: "lower-sensor-error",
-      label: "Lower Sensor Error",
-      text: "Ultrasonic sensor on Lower Tank (TRIG 12 / ECHO 13) failed to read distance.",
-      type: "error",
-      icon: ShieldAlert,
-    });
-  }
-
-  // 5. Lower Tank Empty Alert
-  if (
-    reading?.lowerTank &&
-    (reading.lowerTank.percentage <= 5 || reading.lowerTank.tankStatus === "Empty")
-  ) {
-    alerts.push({
-      id: "lower-tank-empty",
-      label: "Lower Tank Empty",
-      text: "Lower tank water level has dropped to 0-5%. Refill source reservoir.",
-      type: "warning",
-      icon: AlertTriangle,
-    });
-  }
-
-  // 6. Dry-run Protection Alert
-  if (reading?.lowerTank && reading.lowerTank.percentage <= 10) {
-    alerts.push({
-      id: "dry-run-protection",
-      label: "Pump Dry-Run Protection",
-      text: "Pump is blocked from running to prevent mechanical dry-run damage (Lower tank ≤ 10%).",
-      type: "warning",
-      icon: ShieldAlert,
-    });
-  }
-
-  // If no warnings or errors, display Nominal System status
-  if (alerts.length === 0) {
-    alerts.push({
-      id: "nominal",
-      label: "System Nominal",
-      text: "All primary sensors and water pumps operational. Both tanks within normal parameters.",
-      type: "success",
-      icon: CheckCircle2,
-    });
-  }
-
-  const themeStyles = {
-    success: {
-      border: "border-emerald-200/90 dark:border-emerald-800/80 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200",
-      iconBg: "bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300",
-    },
-    warning: {
-      border: "border-amber-200/90 dark:border-amber-800/80 bg-amber-50/80 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200",
-      iconBg: "bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300",
-    },
-    error: {
-      border: "border-rose-200/90 dark:border-rose-800/80 bg-rose-50/80 dark:bg-rose-950/40 text-rose-900 dark:text-rose-200",
-      iconBg: "bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300",
-    },
-    info: {
-      border: "border-sky-200/90 dark:border-sky-800/80 bg-sky-50/80 dark:bg-sky-950/40 text-sky-900 dark:text-sky-200",
-      iconBg: "bg-sky-100 dark:bg-sky-950/80 text-sky-700 dark:text-sky-300",
-    },
-  };
+  const activeAlerts = alerts.filter((alert) => !alert.isResolved).slice(0, limit);
 
   return (
-    <section className="group overflow-hidden rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 p-6 shadow-sm shadow-slate-900/5 transition duration-300 hover:-translate-y-0.5 hover:shadow-xl sm:p-7">
-      <div>
-        <span className="text-[11px] font-extrabold uppercase tracking-widest text-sky-600 dark:text-cyan-400">
-          Diagnostics & Safety Alerts
-        </span>
-        <h2 className="mt-0.5 text-xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100">
-          System Notices
-        </h2>
+    <section className="group overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm shadow-slate-900/5 transition duration-300 hover:-translate-y-0.5 hover:shadow-xl sm:p-7 dark:border-slate-800 dark:bg-slate-900/90">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <span className="text-[11px] font-extrabold uppercase tracking-widest text-sky-600 dark:text-cyan-400">
+            {t("diagnosticsAndSafety")}
+          </span>
+          <h2 className="mt-0.5 truncate text-lg font-extrabold tracking-tight text-slate-900 sm:text-xl dark:text-slate-100">
+            {t("systemNotices")}
+          </h2>
+        </div>
+        <Link
+          to="/alerts"
+          className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-bold text-blue-600 transition hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-cyan-400 dark:hover:bg-blue-950/40"
+        >
+          {t("viewAll")}
+          <ArrowRight size={12} className="rtl:rotate-180" aria-hidden="true" />
+        </Link>
       </div>
 
-      <div className="mt-5 space-y-3">
-        {alerts.map((alertItem) => {
-          const currentTheme = themeStyles[alertItem.type] || themeStyles.info;
-          const AlertIcon = alertItem.icon;
+      <div className="mt-5 space-y-3" aria-live="polite">
+        {isLoading && (
+          <>
+            <Skeleton className="h-20 w-full" />
+            <Skeleton className="h-20 w-full" />
+          </>
+        )}
 
-          return (
-            <div
-              key={alertItem.id}
-              className={`flex items-start gap-3.5 rounded-2xl border p-4 transition duration-300 ${currentTheme.border}`}
-            >
-              <span
-                className={`grid size-10 shrink-0 place-items-center rounded-xl font-bold ${currentTheme.iconBg}`}
-              >
-                <AlertIcon size={20} aria-hidden="true" />
-              </span>
-              <div>
-                <p className="text-sm font-extrabold">{alertItem.label}</p>
-                <p className="mt-1 text-xs font-semibold leading-relaxed opacity-90">
-                  {alertItem.text}
-                </p>
-              </div>
+        {!isLoading && activeAlerts.length === 0 && (
+          <div className="flex items-start gap-3.5 rounded-2xl border border-emerald-200/90 bg-emerald-50/80 p-4 text-emerald-900 dark:border-emerald-800/80 dark:bg-emerald-950/40 dark:text-emerald-200">
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300">
+              <CheckCircle2 size={20} aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-extrabold">{t("systemNominal")}</p>
+              <p className="mt-1 text-xs font-semibold leading-relaxed opacity-90">
+                {t("systemNominalDesc")}
+              </p>
             </div>
-          );
-        })}
+          </div>
+        )}
+
+        {!isLoading &&
+          activeAlerts.map((alert) => {
+            const style = SEVERITY_STYLES[alert.severity] ?? SEVERITY_STYLES.info;
+            const Icon = style.icon;
+            const age = formatRelativeAge(alert.lastSeenAt, t);
+
+            return (
+              <div
+                key={alert.id}
+                className={`flex items-start gap-3.5 rounded-2xl border p-4 transition duration-300 ${style.border}`}
+              >
+                <span className={`grid size-10 shrink-0 place-items-center rounded-xl ${style.iconBg}`}>
+                  <Icon size={20} aria-hidden="true" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <p className="text-sm font-extrabold">{t(alertMessageKey(alert.code))}</p>
+                    {age && (
+                      <span className="text-[10px] font-bold uppercase tracking-wide opacity-70">
+                        {age}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs font-semibold leading-relaxed opacity-90">
+                    {alert.message}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
       </div>
     </section>
   );

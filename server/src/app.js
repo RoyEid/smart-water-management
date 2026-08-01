@@ -7,6 +7,9 @@ import { getSocketServer } from "./realtime/socketServer.js";
 import authRoutes from "./routes/authRoutes.js";
 import sensorRoutes from "./routes/sensorRoutes.js";
 import deviceControlRoutes from "./routes/deviceControlRoutes.js";
+import adminRoutes from "./routes/adminRoutes.js";
+import deviceRoutes from "./routes/deviceRoutes.js";
+import alertRoutes from "./routes/alertRoutes.js";
 import errorHandler from "./middleware/errorHandler.js";
 import passport from "./config/passport.js";
 
@@ -85,7 +88,13 @@ app.get("/api/health", (req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/sensors", sensorRoutes);
+// Singular /api/device/control is the path the ESP32 firmware already polls;
+// it is a distinct prefix from the plural /api/devices registry below and must
+// keep its exact spelling.
 app.use("/api/device/control", deviceControlRoutes);
+app.use("/api/devices", deviceRoutes);
+app.use("/api/alerts", alertRoutes);
+app.use("/api/admin", adminRoutes);
 
 // 404 handler
 app.use((req, res, next) => {

@@ -6,6 +6,9 @@ import { generateSixDigitCode } from "../utils/generateCode.js";
 import { hashToken } from "../utils/hashToken.js";
 import { setAuthCookie, clearAuthCookie } from "../utils/cookies.js";
 import { sendVerificationEmail, sendPasswordResetEmail } from "../services/emailService.js";
+import { serializeUser } from "../utils/serializeUser.js";
+import { recordAudit } from "../services/auditService.js";
+import { AUDIT_ACTIONS } from "../models/AuditLog.js";
 
 // Helper to sign JWT
 export function signJWT(userId, role) {
@@ -52,6 +55,15 @@ export async function register(req, res, next) {
 
     // Send email verification code
     await sendVerificationEmail(user.email, user.name, rawCode);
+
+    await recordAudit({
+      req,
+      actor: user,
+      action: AUDIT_ACTIONS.REGISTER,
+      targetType: "account",
+      targetId: user._id,
+      targetLabel: user.email,
+    });
 
     res.status(201).json({
       message: "Registration successful! A six-digit verification code has been sent to your email.",
@@ -199,22 +211,38 @@ export async function login(req, res, next) {
       return next(error);
     }
 
+    // A disabled account is refused here as well as in the auth middleware, so
+    // it never receives a session cookie in the first place.
+    if (user.isActive === false) {
+      const error = new Error(
+        "This account has been disabled. Please contact an administrator."
+      );
+      error.statusCode = 403;
+      return next(error);
+    }
+
     // Sign JWT
     const token = signJWT(user._id, user.role);
 
     // Set cookie
     setAuthCookie(res, token, rememberMe);
 
+    user.lastLoginAt = new Date();
+    await user.save();
+
+    await recordAudit({
+      req,
+      actor: user,
+      action: AUDIT_ACTIONS.LOGIN,
+      targetType: "account",
+      targetId: user._id,
+      targetLabel: user.email,
+      metadata: { provider: "local" },
+    });
+
     res.status(200).json({
       message: "Logged in successfully.",
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        avatar: user.avatar || "",
-        authProvider: user.authProvider || "local",
-      },
+      user: serializeUser(user, { includePasswordFlag: true }),
     });
   } catch (error) {
     next(error);
@@ -223,6 +251,19 @@ export async function login(req, res, next) {
 
 export async function logout(req, res, next) {
   try {
+    // Logout is deliberately not behind requireAuth — clearing a stale cookie
+    // must always succeed. The audit entry is therefore best-effort: it is
+    // written only when the request carried an identifiable session.
+    if (req.user) {
+      await recordAudit({
+        req,
+        action: AUDIT_ACTIONS.LOGOUT,
+        targetType: "account",
+        targetId: req.user._id,
+        targetLabel: req.user.email,
+      });
+    }
+
     clearAuthCookie(res);
     res.status(200).json({
       message: "Logged out successfully.",
@@ -234,25 +275,12 @@ export async function logout(req, res, next) {
 
 export async function me(req, res, next) {
   try {
-    // Re-fetch with password field to determine hasPassword safely
+    // Re-fetch with the password field so hasPassword can be derived without
+    // the hash itself ever entering the response.
     const userWithPw = await User.findById(req.user._id).select("+password");
 
     res.status(200).json({
-      user: {
-        id: req.user._id,
-        name: req.user.name,
-        email: req.user.email,
-        role: req.user.role,
-        avatar: req.user.avatar || "",
-        authProvider: req.user.authProvider || "local",
-        isVerified: req.user.isVerified,
-        hasPassword: Boolean(userWithPw?.password),
-        connectedProviders: {
-          google: Boolean(req.user.googleId),
-          github: Boolean(req.user.githubId),
-        },
-        createdAt: req.user.createdAt,
-      },
+      user: serializeUser(userWithPw ?? req.user, { includePasswordFlag: true }),
     });
   } catch (error) {
     next(error);
@@ -406,26 +434,120 @@ export async function updateProfile(req, res, next) {
       return next(error);
     }
 
+    // Only the name is assignable here. Reading the whole body into the
+    // document would let a caller set role, isActive or isVerified — the
+    // schema is strict-validated upstream, and this keeps the guarantee local.
     user.name = name;
     await user.save();
 
+    await recordAudit({
+      req,
+      action: AUDIT_ACTIONS.PROFILE_UPDATED,
+      targetType: "account",
+      targetId: user._id,
+      targetLabel: user.email,
+      metadata: { field: "name" },
+    });
+
     res.status(200).json({
       message: "Profile updated successfully.",
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        avatar: user.avatar || "",
-        authProvider: user.authProvider || "local",
-        isVerified: user.isVerified,
-        hasPassword: Boolean(user.password),
-        connectedProviders: {
-          google: Boolean(user.googleId),
-          github: Boolean(user.githubId),
-        },
-        createdAt: user.createdAt,
+      user: serializeUser(user, { includePasswordFlag: true }),
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Stores the avatar as a data URL on the user document.
+ *
+ * Deliberately no filesystem or object store: this deployment has neither, and
+ * a small inline image keeps the account portable. The size cap is enforced
+ * both by the route schema and again here, because the JSON body limit alone
+ * would reject the request with a less useful error.
+ */
+export async function updateAvatar(req, res, next) {
+  try {
+    const { avatar } = req.body;
+
+    const user = await User.findById(req.user._id).select("+password");
+    if (!user) {
+      const error = new Error("Account not found.");
+      error.statusCode = 404;
+      return next(error);
+    }
+
+    user.avatar = avatar ?? "";
+    await user.save();
+
+    await recordAudit({
+      req,
+      action: AUDIT_ACTIONS.PROFILE_UPDATED,
+      targetType: "account",
+      targetId: user._id,
+      targetLabel: user.email,
+      metadata: { field: "avatar", removed: !avatar },
+    });
+
+    res.status(200).json({
+      message: avatar ? "Profile photo updated." : "Profile photo removed.",
+      user: serializeUser(user, { includePasswordFlag: true }),
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Persists theme, language and notification preferences on the account so they
+ * follow the user to another browser instead of living only in localStorage.
+ */
+export async function updatePreferences(req, res, next) {
+  try {
+    const { theme, language, notificationPrefs } = req.body;
+
+    const user = await User.findById(req.user._id).select("+password");
+    if (!user) {
+      const error = new Error("Account not found.");
+      error.statusCode = 404;
+      return next(error);
+    }
+
+    if (theme !== undefined) user.preferences.theme = theme;
+    if (language !== undefined) user.preferences.language = language;
+
+    if (notificationPrefs) {
+      // Explicit per-key assignment: a partial update must leave the untouched
+      // toggles alone rather than resetting them to schema defaults.
+      for (const key of [
+        "pumpAlerts",
+        "deviceOfflineAlerts",
+        "safetyAlerts",
+        "emailNotifications",
+      ]) {
+        if (notificationPrefs[key] !== undefined) {
+          user.notificationPrefs[key] = notificationPrefs[key];
+        }
+      }
+    }
+
+    await user.save();
+
+    await recordAudit({
+      req,
+      action: AUDIT_ACTIONS.SETTINGS_UPDATED,
+      targetType: "account",
+      targetId: user._id,
+      targetLabel: user.email,
+      metadata: {
+        theme: user.preferences.theme,
+        language: user.preferences.language,
       },
+    });
+
+    res.status(200).json({
+      message: "Preferences saved.",
+      user: serializeUser(user, { includePasswordFlag: true }),
     });
   } catch (error) {
     next(error);
@@ -462,6 +584,14 @@ export async function changePassword(req, res, next) {
     user.password = hashedPassword;
     user.passwordChangedAt = new Date();
     await user.save();
+
+    await recordAudit({
+      req,
+      action: AUDIT_ACTIONS.PASSWORD_CHANGED,
+      targetType: "account",
+      targetId: user._id,
+      targetLabel: user.email,
+    });
 
     res.status(200).json({
       message: "Password changed successfully.",
@@ -504,8 +634,43 @@ export async function deleteAccount(req, res, next) {
       }
     }
 
+    // The same last-administrator rule the admin panel enforces applies here:
+    // an admin must not be able to strand the installation by deleting their
+    // own account from Settings instead.
+    if (user.role === "admin") {
+      const otherAdmins = await User.countDocuments({
+        role: "admin",
+        _id: { $ne: user._id },
+      });
+
+      if (otherAdmins === 0) {
+        const error = new Error(
+          "You are the last administrator. Promote another user to administrator before deleting your account."
+        );
+        error.statusCode = 409;
+        return next(error);
+      }
+    }
+
+    const deletedEmail = user.email;
+    const deletedId = user._id;
+
     await User.findByIdAndDelete(req.user._id);
     clearAuthCookie(res);
+
+    // Telemetry, devices and alerts describe the hardware, not the person, so
+    // they are intentionally left intact. What is removed is everything the
+    // account owned: the user document itself. The audit row is retained
+    // deliberately — it is the record that the deletion happened.
+    await recordAudit({
+      req,
+      actor: { _id: deletedId, email: deletedEmail, role: user.role },
+      action: AUDIT_ACTIONS.ACCOUNT_DELETED,
+      targetType: "account",
+      targetId: deletedId,
+      targetLabel: deletedEmail,
+      metadata: { selfService: true },
+    });
 
     res.status(200).json({
       message: "Account deleted successfully.",

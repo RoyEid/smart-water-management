@@ -1,4 +1,6 @@
 import UltrasonicReading from "../models/UltrasonicReading.js";
+import { touchDevice } from "./deviceService.js";
+import { syncAlerts } from "./alertService.js";
 
 const ONLINE_WINDOW_MS = 10_000;
 
@@ -114,7 +116,15 @@ export function saveLatestReading(payload) {
     console.error("[Ultrasonic] Failed to persist reading:", error.message);
   });
 
-  return serializeReading(latestReading);
+  const serialized = serializeReading(latestReading);
+
+  // Registry and alerting are downstream consumers of the reading, held to the
+  // same rule: both swallow their own failures so neither can turn a valid
+  // device POST into an error. A reading that arrived is always accepted.
+  touchDevice(serialized);
+  syncAlerts(serialized, { isOnline: true });
+
+  return serialized;
 }
 
 export function getLatestReading() {

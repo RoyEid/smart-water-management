@@ -14,6 +14,34 @@ import {
 import api from "../services/api";
 import OAuthButtons from "../components/OAuthButtons";
 
+/**
+ * Maps the ?oauthError= code the backend redirects with onto a message.
+ *
+ * Lives outside the component so it can seed useState lazily on the first
+ * render, before any effect runs.
+ */
+function readOAuthErrorStatus() {
+  const oauthError = new URLSearchParams(window.location.search).get("oauthError");
+  if (!oauthError) return null;
+
+  const errorMessages = {
+    google: "Google authentication failed. Please try again.",
+    github:
+      "GitHub authentication failed. Make sure your GitHub account has a verified email address.",
+    no_email:
+      "No verified email address was provided by your OAuth provider. Please verify your email with the provider or register locally.",
+    account_link_failed:
+      "Unable to link account. An account with this email already exists under a different authentication method.",
+    account_disabled:
+      "This account has been disabled. Please contact an administrator.",
+  };
+
+  return {
+    type: "error",
+    message: errorMessages[oauthError] || "Authentication failed. Please try again.",
+  };
+}
+
 function LoginPage() {
   const [formData, setFormData] = useState({
     email: "",
@@ -22,7 +50,10 @@ function LoginPage() {
   });
 
   const [errors, setErrors] = useState({});
-  const [status, setStatus] = useState(null);
+  // An ?oauthError= parameter is part of the URL this page was opened with, so
+  // the banner is initial state derived during the first render rather than
+  // written back by an effect afterwards.
+  const [status, setStatus] = useState(readOAuthErrorStatus);
   const [showPassword, setShowPassword] = useState(false);
   const [capsLock, setCapsLock] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -30,28 +61,10 @@ function LoginPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const searchParams = new URLSearchParams(window.location.search);
-    const oauthError = searchParams.get("oauthError");
-
-    if (oauthError) {
-      const errorMessages = {
-        google: "Google authentication failed. Please try again.",
-        github:
-          "GitHub authentication failed. Make sure your GitHub account has a verified email address.",
-        no_email:
-          "No verified email address was provided by your OAuth provider. Please verify your email with the provider or register locally.",
-        account_link_failed:
-          "Unable to link account. An account with this email already exists under a different authentication method.",
-      };
-
-      const message =
-        errorMessages[oauthError] || "Authentication failed. Please try again.";
-
-      setStatus({
-        type: "error",
-        message,
-      });
-
+    // Strips the parameter from the address bar so a refresh does not re-show
+    // an error about an attempt the user has already seen. Touching history is
+    // an external side effect, which is exactly what an effect is for.
+    if (new URLSearchParams(window.location.search).has("oauthError")) {
       window.history.replaceState({}, document.title, window.location.pathname);
     }
   }, []);
@@ -123,27 +136,10 @@ function LoginPage() {
       setLoading(false);
     }
   }
-  function handleGoogleLogin() {
-    const backendUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
+  // The OAuth redirect URLs are built by utils/oauth.js and used by the
+  // OAuthButtons component below. The two local copies that used to live here
+  // were unreferenced duplicates of that helper.
 
-    const cleanBackendUrl = backendUrl.replace(/\/+$/, "");
-    const oauthUrl = cleanBackendUrl.endsWith("/api")
-      ? `${cleanBackendUrl}/auth/google`
-      : `${cleanBackendUrl}/api/auth/google`;
-
-    window.location.href = oauthUrl;
-  }
-  
-  function handleGitHubLogin() {
-    const backendUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
-
-    const cleanBackendUrl = backendUrl.replace(/\/+$/, "");
-    const oauthUrl = cleanBackendUrl.endsWith("/api")
-      ? `${cleanBackendUrl}/auth/github`
-      : `${cleanBackendUrl}/api/auth/github`;
-
-    window.location.href = oauthUrl;
-  }
   return (
     <div>
       {/* Heading */}

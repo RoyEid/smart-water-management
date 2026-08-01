@@ -15,7 +15,20 @@ import SettingsCard from "./SettingsCard";
 import api from "../../services/api";
 import { useLanguage } from "../../context/LanguageContext";
 
-export default function SecuritySection({ user, logout, loggingOut }) {
+export default function SecuritySection({ user, logout }) {
+  // Owned locally rather than threaded down from the page, so the button can
+  // show its own pending state without the settings page tracking it.
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    try {
+      await logout?.();
+    } finally {
+      setLoggingOut(false);
+    }
+  };
+
   const { t } = useLanguage();
   const hasPassword = user?.hasPassword;
   const authProvider = user?.authProvider || "local";
@@ -264,7 +277,7 @@ export default function SecuritySection({ user, logout, loggingOut }) {
         </div>
         <button
           type="button"
-          onClick={logout}
+          onClick={handleLogout}
           disabled={loggingOut}
           className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-sm transition hover:-translate-y-0.5 hover:border-red-200 dark:hover:border-red-800 hover:bg-red-50 dark:hover:bg-red-950/50 hover:text-red-700 dark:hover:text-red-300 hover:shadow-md focus:outline-none focus:ring-4 focus:ring-red-100 dark:focus:ring-red-900/30 disabled:cursor-not-allowed disabled:opacity-50"
         >

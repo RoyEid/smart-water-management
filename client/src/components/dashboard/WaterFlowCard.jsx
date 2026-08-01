@@ -17,21 +17,29 @@ function isPresent(value) {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-function MetricBlock({ icon: Icon, label, value, unit, waiting }) {
+function MetricBlock({ icon: Icon, label, value, unit, waiting, waitingLabel }) {
   return (
-    <div className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/40 p-4">
+    <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/40">
       <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
         <Icon size={15} className="text-sky-500 dark:text-cyan-400" aria-hidden="true" />
         <span className="truncate">{label}</span>
       </div>
-      <p className="mt-2 truncate text-3xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100">
-        {waiting ? "--" : value}
-        {!waiting && unit && (
-          <span className="ml-1 text-sm font-semibold text-slate-400 dark:text-slate-500">
-            {unit}
-          </span>
-        )}
-      </p>
+      {waiting ? (
+        // Worded rather than "--": a dash next to a unit still reads like a
+        // measurement that happens to be blank.
+        <p className="mt-2 truncate text-xs font-bold text-slate-400 dark:text-slate-500">
+          {waitingLabel}
+        </p>
+      ) : (
+        <p className="mt-2 truncate text-3xl font-extrabold tabular-nums tracking-tight text-slate-900 dark:text-slate-100">
+          {value}
+          {unit && (
+            <span className="ms-1 text-sm font-semibold text-slate-400 dark:text-slate-500">
+              {unit}
+            </span>
+          )}
+        </p>
+      )}
     </div>
   );
 }
@@ -93,13 +101,15 @@ export default function WaterFlowCard({
           value={hasFlowRate ? flowRate.toFixed(1) : null}
           unit="L/min"
           waiting={!hasFlowRate}
+          waitingLabel={t("waitingForData")}
         />
         <MetricBlock
           icon={Droplets}
-          label={t("totalWaterTransferred")}
+          label={t("sessionTransferred")}
           value={hasTotalVolume ? clampedTotalVolume.toFixed(2) : null}
           unit="L"
           waiting={!hasTotalVolume}
+          waitingLabel={t("waitingForData")}
         />
       </div>
 

@@ -38,19 +38,20 @@ function VerifyCodePage() {
     sessionStorage.getItem("verificationPurpose") ||
     "verify-email";
 
-  const [code, setCode] = useState(Array(CODE_LENGTH).fill(""));
+  // Seeded from the ?code= parameter during the initial render rather than
+  // written back by an effect: the parameter is part of the URL the page was
+  // opened with, so it is initial state, not a later synchronisation.
+  const [code, setCode] = useState(() =>
+    codeParam && codeParam.length === CODE_LENGTH
+      ? codeParam.split("")
+      : Array(CODE_LENGTH).fill("")
+  );
 
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
   const [resendTimer, setResendTimer] = useState(RESEND_WAIT);
   const [expiryTimer, setExpiryTimer] = useState(CODE_EXPIRY);
-
-  useEffect(() => {
-    if (codeParam && codeParam.length === CODE_LENGTH) {
-      setCode(codeParam.split(""));
-    }
-  }, [codeParam]);
 
   useEffect(() => {
     if (email) {

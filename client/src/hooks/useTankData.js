@@ -1,22 +1,29 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import sensorSocket, {
   acquireSensorSocket,
   releaseSensorSocket,
 } from "../services/socket";
 import { fetchLatestUltrasonicReading } from "../services/sensorApi";
+import { getApiErrorMessage, isUnauthorized } from "../utils/apiError";
 
 const ONLINE_WINDOW_MS = 10_000;
+
+// Bounded so a dashboard left open overnight cannot grow without limit. At one
+// reading every 2 s this is the last two minutes, which is what the recent
+// history chart shows.
+const MAX_HISTORY_POINTS = 60;
+
+function isFiniteNumber(value) {
+  return typeof value === "number" && Number.isFinite(value);
+}
 
 function isTankObj(obj) {
   return (
     obj &&
     typeof obj === "object" &&
-    typeof obj.distanceCm === "number" &&
-    Number.isFinite(obj.distanceCm) &&
-    typeof obj.percentage === "number" &&
-    Number.isFinite(obj.percentage) &&
-    typeof obj.waterHeightCm === "number" &&
-    Number.isFinite(obj.waterHeightCm) &&
+    isFiniteNumber(obj.distanceCm) &&
+    isFiniteNumber(obj.percentage) &&
+    isFiniteNumber(obj.waterHeightCm) &&
     typeof obj.tankStatus === "string"
   );
 }
@@ -46,94 +53,161 @@ function isReading(value) {
   }
 
   return (
-    typeof value.distanceCm === "number" &&
-    Number.isFinite(value.distanceCm) &&
-    typeof value.percentage === "number" &&
-    Number.isFinite(value.percentage) &&
-    typeof value.waterHeightCm === "number" &&
-    Number.isFinite(value.waterHeightCm) &&
+    isFiniteNumber(value.distanceCm) &&
+    isFiniteNumber(value.percentage) &&
+    isFiniteNumber(value.waterHeightCm) &&
     typeof value.tankStatus === "string"
   );
 }
 
+/**
+ * Normalises the payload without inventing anything.
+ *
+ * A tank the device did not report stays null — it is not filled with zeros,
+ * because a zeroed tank renders as a real "0.0% / Empty" reading and would be
+ * indistinguishable from a genuinely empty tank.
+ */
 function normalizeReading(value) {
   if (!value) return null;
-  const upperTank = value.upperTank || {
-    distanceCm: value.distanceCm ?? 0,
-    percentage: value.percentage ?? 0,
-    waterHeightCm: value.waterHeightCm ?? 0,
-    tankStatus: value.tankStatus || "Normal",
-  };
-  const lowerTank = value.lowerTank || {
-    distanceCm: value.distanceCm ?? 0,
-    percentage: value.percentage ?? 0,
-    waterHeightCm: value.waterHeightCm ?? 0,
-    tankStatus: value.tankStatus || "Normal",
-  };
 
-  const pumpStatus = value.pumpStatus || "OFF";
+  const singleTankFallback = isFiniteNumber(value.percentage)
+    ? {
+        distanceCm: value.distanceCm,
+        percentage: value.percentage,
+        waterHeightCm: value.waterHeightCm,
+        tankStatus: value.tankStatus || "Normal",
+      }
+    : null;
+
+  const upperTank = isTankObj(value.upperTank) ? value.upperTank : singleTankFallback;
+  const lowerTank = isTankObj(value.lowerTank) ? value.lowerTank : singleTankFallback;
+
+  const pumpStatus = value.pumpStatus ?? null;
 
   return {
     ...value,
     upperTank,
     lowerTank,
     pumpStatus,
-    pumpRunning: value.pumpRunning ?? pumpStatus === "ON",
-    systemEnabled: value.systemEnabled ?? true,
-    pumpMode: value.pumpMode || "AUTO",
-    // Normalized to a number once, so every consumer compares like with like.
+    // `?? null` rather than `?? false`: "the device did not say" and "the
+    // device said no" are different answers and the UI distinguishes them.
+    pumpRunning: value.pumpRunning ?? (pumpStatus ? pumpStatus === "ON" : null),
+    systemEnabled: value.systemEnabled ?? null,
+    pumpMode: value.pumpMode ?? null,
+    flowRateLMin: isFiniteNumber(value.flowRateLMin) ? value.flowRateLMin : null,
+    totalTransferredLitres: isFiniteNumber(value.totalTransferredLitres)
+      ? value.totalTransferredLitres
+      : null,
+    flowDataMode: value.flowDataMode ?? null,
+    // Normalised to a number once, so every consumer compares like with like.
     receivedAtMs: readingTime(value),
   };
 }
 
+/**
+ * Owns the live telemetry stream for the whole dashboard.
+ *
+ * Uses the shared socket singleton — it never constructs a socket — and the
+ * refcounted acquire/release pair, so several mounted consumers share one
+ * connection and a page change does not tear down the connection the next page
+ * is about to use.
+ */
 export default function useTankData() {
   const [reading, setReading] = useState(null);
   const [readings, setReadings] = useState([]);
   const [error, setError] = useState("");
   const [unauthorized, setUnauthorized] = useState(false);
+  // "loading" until the first fetch resolves, so the UI can show a skeleton
+  // instead of an empty state that looks like "the device has never reported".
+  const [isLoading, setIsLoading] = useState(true);
+  const [socketConnected, setSocketConnected] = useState(sensorSocket.connected);
   const [clock, setClock] = useState(() => Date.now());
+  const [reloadToken, setReloadToken] = useState(0);
+
+  // Keeps the newest-timestamp guard across renders without re-running the
+  // subscription effect, which would drop and re-add listeners.
+  const newestRef = useRef(0);
+
+  const retry = useCallback(() => {
+    setError("");
+    setIsLoading(true);
+    setReloadToken((token) => token + 1);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
-    let newest = 0;
 
     const applyReading = (next) => {
-      if (!isReading(next)) return;
+      if (!isReading(next)) return false;
 
       const timestamp = readingTime(next);
-      if (timestamp < newest) return;
-      newest = timestamp;
+      // Out-of-order delivery (a slow REST response landing after a socket
+      // push) must not roll the dashboard backwards.
+      if (timestamp < newestRef.current) return true;
+      newestRef.current = timestamp;
+
       const normalized = normalizeReading(next);
 
-      // TEMP DEBUG: confirms each live payload's flow fields reach React fresh
-      // (no caching/memoization). Remove once the flow pipeline is verified.
-      console.debug(
-        "[FLOW] payload flowRateLMin=", normalized.flowRateLMin,
-        "totalTransferredLitres=", normalized.totalTransferredLitres,
-        "at", normalized.receivedAt
-      );
-
       setReading(normalized);
-      setReadings((current) => [...current, normalized].slice(-20));
+      setReadings((current) => [...current, normalized].slice(-MAX_HISTORY_POINTS));
       setError("");
+      setIsLoading(false);
       setClock(Date.now());
+      return true;
     };
 
     const loadLatest = async () => {
       try {
         const latest = await fetchLatestUltrasonicReading();
-        if (mounted && latest) applyReading(latest);
-      } catch (requestError) {
-        if (mounted && requestError.response?.status === 401) {
-          setUnauthorized(true);
-        } else if (mounted) {
-          setError("Unable to load sensor data from the backend.");
+        if (!mounted) return;
+
+        if (!latest) {
+          // A valid "no device has ever reported" answer. Not an error, and
+          // not a reason to keep showing a loading skeleton forever.
+          setIsLoading(false);
+          return;
         }
+
+        // A malformed but truthy payload must also end the loading state,
+        // otherwise the UI waits on a response that already arrived.
+        if (!applyReading(latest)) {
+          setIsLoading(false);
+        }
+      } catch (requestError) {
+        if (!mounted) return;
+
+        if (isUnauthorized(requestError)) {
+          setUnauthorized(true);
+        } else {
+          setError(
+            getApiErrorMessage(
+              requestError,
+              "Unable to load sensor data from the backend."
+            )
+          );
+        }
+        setIsLoading(false);
       }
     };
-    const onConnect = () => { if (mounted) { setError(""); loadLatest(); } };
-    const onDisconnect = () => mounted && setError("Live connection lost. Reconnecting automatically...");
-    const onConnectError = () => mounted && setError("Unable to connect to live updates.");
+
+    const onConnect = () => {
+      if (!mounted) return;
+      setSocketConnected(true);
+      setError("");
+      // Re-sync on reconnect: readings that arrived while the socket was down
+      // were never pushed, so the REST snapshot fills the gap.
+      loadLatest();
+    };
+
+    const onDisconnect = () => {
+      if (!mounted) return;
+      setSocketConnected(false);
+    };
+
+    const onConnectError = () => {
+      if (!mounted) return;
+      setSocketConnected(false);
+    };
 
     sensorSocket.on("ultrasonic:update", applyReading);
     sensorSocket.on("connect", onConnect);
@@ -141,6 +215,9 @@ export default function useTankData() {
     sensorSocket.on("connect_error", onConnectError);
     acquireSensorSocket();
     loadLatest();
+
+    // Drives the online/offline decision. Without it a device that stopped
+    // reporting would stay "online" until the next render happened to occur.
     const interval = window.setInterval(() => setClock(Date.now()), 1_000);
 
     return () => {
@@ -152,7 +229,7 @@ export default function useTankData() {
       sensorSocket.off("connect_error", onConnectError);
       releaseSensorSocket();
     };
-  }, []);
+  }, [reloadToken]);
 
   // Online purely as a function of how old the newest reading is. Nothing here
   // depends on component lifetime, so a remount cannot flip a live device
@@ -162,5 +239,20 @@ export default function useTankData() {
     return Number.isFinite(timestamp) && clock - timestamp < ONLINE_WINDOW_MS;
   }, [clock, reading?.receivedAtMs]);
 
-  return { reading, readings, isOnline, error, unauthorized };
+  // The last good reading is kept on screen when the device goes quiet, but
+  // flagged so it is presented as history rather than as the current state.
+  const isStale = Boolean(reading) && !isOnline;
+
+  return {
+    reading,
+    readings,
+    isOnline,
+    isStale,
+    isLoading,
+    error,
+    unauthorized,
+    socketConnected,
+    lastUpdatedAt: reading?.receivedAt ?? null,
+    retry,
+  };
 }

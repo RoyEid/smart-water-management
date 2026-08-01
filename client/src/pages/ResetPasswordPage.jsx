@@ -1,4 +1,6 @@
-import { useState, useEffect } from "react";
+// The reset form is reached once per reset flow and is unmounted afterwards,
+// so its fields start empty without needing an effect to clear them.
+import { useState } from "react";
 import {
   AlertCircle,
   Check,
@@ -15,15 +17,6 @@ import api from "../services/api";
 function ResetPasswordPage() {
   const location = useLocation();
   const navigate = useNavigate();
-
-  useEffect(() => {
-    setFormData({
-      password: "",
-      confirmPassword: "",
-    });
-    setShowPassword(false);
-    setShowConfirmPassword(false);
-  }, [location.pathname]);
 
   const email = location.state?.email || "";
   const resetToken = location.state?.resetToken || "";

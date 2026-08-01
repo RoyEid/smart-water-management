@@ -59,6 +59,38 @@ export function emitDeviceControlChanged(controlState) {
   io.emit("device-control-changed", controlState);
 }
 
+export function emitAlertCreated(alert) {
+  if (!io) return;
+  io.emit("alert:new", serializeAlert(alert));
+}
+
+export function emitAlertResolved(payload) {
+  if (!io) return;
+  io.emit("alert:resolved", payload);
+}
+
+/**
+ * Alerts are broadcast in the same shape the REST list returns, so the client
+ * can push a socket alert straight into the list it already rendered without a
+ * second normalization path.
+ */
+function serializeAlert(alert) {
+  return {
+    id: String(alert._id ?? alert.id),
+    deviceId: alert.deviceId,
+    code: alert.code,
+    severity: alert.severity,
+    message: alert.message,
+    context: alert.context ?? {},
+    isRead: Boolean(alert.isRead),
+    isResolved: Boolean(alert.isResolved),
+    firstSeenAt: alert.firstSeenAt,
+    lastSeenAt: alert.lastSeenAt,
+    resolvedAt: alert.resolvedAt ?? null,
+    occurrences: alert.occurrences ?? 1,
+  };
+}
+
 export function getSocketServer() {
   return io;
 }

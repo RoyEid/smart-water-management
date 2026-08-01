@@ -1,64 +1,50 @@
-import {
-  BarChart3,
-  Bell,
-  ChevronLeft,
-  ChevronRight,
-  Cpu,
-  Droplets,
-  History,
-  LayoutDashboard,
-  Radio,
-  Settings,
-  Sliders,
-  Waves,
-  X,
-} from "lucide-react";
+import { useEffect, useRef } from "react";
+import { NavLink } from "react-router-dom";
+import { ChevronLeft, ChevronRight, Droplets, X } from "lucide-react";
 import ComingSoonBadge from "./ComingSoonBadge";
+import {
+  ACTIVE_NAV_ITEMS,
+  ADMIN_NAV_ITEM,
+  FUTURE_NAV_ITEMS,
+} from "./navigation";
 import { useLanguage } from "../../context/LanguageContext";
+import { useAuth } from "../../context/AuthContext";
 
 export default function Sidebar({
-  activeTab = "dashboard",
-  onSelectTab,
   isCollapsed = false,
   onToggleCollapse,
   isMobileOpen = false,
   onCloseMobile,
-  onShowToast,
 }) {
   const { t, dir } = useLanguage();
+  const { isAdmin } = useAuth();
   const isRtl = dir === "rtl";
+  const closeButtonRef = useRef(null);
 
-  const activeItems = [
-    { id: "dashboard", labelKey: "dashboard", icon: LayoutDashboard },
-    { id: "pump-control", labelKey: "pumpControl", icon: Sliders },
-    { id: "live-monitoring", labelKey: "liveMonitoring", icon: Radio },
-    { id: "water-flow", labelKey: "waterFlow", icon: Waves },
-    { id: "settings", labelKey: "settings", icon: Settings },
-  ];
+  useEffect(() => {
+    if (!isMobileOpen) return undefined;
 
-  const futureItems = [
-    { id: "history", labelKey: "history", icon: History },
-    { id: "analytics", labelKey: "analytics", icon: BarChart3 },
-    { id: "alerts", labelKey: "alerts", icon: Bell },
-    { id: "devices", labelKey: "devices", icon: Cpu },
-  ];
+    // The drawer is a modal surface on mobile: focus moves into it and Escape
+    // closes it, so it is operable without a pointer.
+    closeButtonRef.current?.focus();
 
-  const handleItemClick = (item, isStatic = false) => {
-    const translatedLabel = t(item.labelKey);
-    if (isStatic) {
-      if (onShowToast) {
-        onShowToast(`${translatedLabel} ${t("soonText")}`);
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseMobile?.();
       }
-      return;
-    }
+    };
 
-    if (onSelectTab) {
-      onSelectTab(item.id);
-    }
-    if (onCloseMobile) {
-      onCloseMobile();
-    }
-  };
+    document.addEventListener("keydown", handleKeyDown);
+    // The page behind must not scroll while the drawer covers it.
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isMobileOpen, onCloseMobile]);
 
   const CollapseIcon = isRtl
     ? isCollapsed
@@ -68,9 +54,17 @@ export default function Sidebar({
     ? ChevronRight
     : ChevronLeft;
 
+  const navItems = isAdmin ? [...ACTIVE_NAV_ITEMS, ADMIN_NAV_ITEM] : ACTIVE_NAV_ITEMS;
+
+  const linkClasses = ({ isActive }) =>
+    `group relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-extrabold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+      isActive
+        ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30 ring-1 ring-blue-500"
+        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800/80 dark:hover:text-white"
+    } ${isCollapsed ? "justify-center px-0" : ""}`;
+
   return (
     <>
-      {/* Mobile Dark Overlay Backdrop */}
       {isMobileOpen && (
         <div
           onClick={onCloseMobile}
@@ -79,11 +73,11 @@ export default function Sidebar({
         />
       )}
 
-      {/* Sidebar Container */}
       <aside
+        aria-label={t("mainNavigation")}
         className={`fixed inset-y-0 ${
           isRtl ? "right-0 border-l" : "left-0 border-r"
-        } z-50 flex flex-col border-slate-200 bg-white text-slate-800 dark:border-slate-800 dark:bg-[#0B132B] dark:text-slate-200 shadow-2xl transition-all duration-300 ${
+        } z-50 flex flex-col border-slate-200 bg-white text-slate-800 shadow-2xl transition-all duration-300 dark:border-slate-800 dark:bg-[#0B132B] dark:text-slate-200 ${
           isCollapsed ? "w-20" : "w-64"
         } ${
           isMobileOpen
@@ -93,9 +87,9 @@ export default function Sidebar({
             : "-translate-x-full lg:translate-x-0"
         }`}
       >
-        {/* Brand Header */}
-        <div className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200/80 dark:border-slate-800/80 px-4">
-          <div className="flex items-center gap-3">
+        {/* Brand */}
+        <div className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200/80 px-4 dark:border-slate-800/80">
+          <div className="flex min-w-0 items-center gap-3">
             <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-cyan-400 to-blue-600 text-white shadow-md shadow-blue-500/20">
               <Droplets size={22} aria-hidden="true" />
             </span>
@@ -104,120 +98,129 @@ export default function Sidebar({
                 <span className="block truncate text-sm font-extrabold tracking-tight text-slate-900 dark:text-white">
                   {t("smartWater")}
                 </span>
-                <span className="block text-[10px] font-extrabold uppercase tracking-widest text-sky-600 dark:text-cyan-400">
+                <span className="block truncate text-[10px] font-extrabold uppercase tracking-widest text-sky-600 dark:text-cyan-400">
                   {t("iotPlatform")}
                 </span>
               </div>
             )}
           </div>
 
-          {/* Close button for Mobile */}
           <button
+            ref={closeButtonRef}
             type="button"
             onClick={onCloseMobile}
-            className="rounded-xl p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-white lg:hidden"
-            aria-label="Close menu"
+            className="shrink-0 rounded-xl p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 lg:hidden dark:hover:bg-slate-800 dark:hover:text-white"
+            aria-label={t("closeMenu")}
           >
             <X size={20} aria-hidden="true" />
           </button>
         </div>
 
-        {/* Scrollable Navigation List */}
-        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-6 scrollbar-thin">
-          {/* Active Services Group */}
+        <div className="scrollbar-thin flex-1 space-y-6 overflow-y-auto px-3 py-4">
           <div>
             {!isCollapsed && (
-              <p className="px-3 pb-2 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-400">
+              <p className="px-3 pb-2 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
                 {t("activeOperations")}
               </p>
             )}
             <nav className="space-y-1">
-              {activeItems.map((item) => {
+              {navItems.map((item) => {
                 const Icon = item.icon;
-                const isActive = activeTab === item.id;
                 const label = t(item.labelKey);
                 return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => handleItemClick(item, false)}
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    // Navigating on mobile must dismiss the drawer, otherwise
+                    // the new page is hidden behind the menu that opened it.
+                    onClick={onCloseMobile}
+                    className={linkClasses}
                     title={isCollapsed ? label : undefined}
-                    className={`group relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-extrabold transition-all duration-200 ${
-                      isActive
-                        ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30 ring-1 ring-blue-500"
-                        : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white"
-                    } ${isCollapsed ? "justify-center px-0" : ""}`}
                   >
-                    {/* Active Indicator Strip */}
-                    {isActive && (
-                      <span
-                        className={`absolute ${
-                          isRtl ? "right-0 rounded-l-full" : "left-0 rounded-r-full"
-                        } inset-y-1.5 w-1 bg-cyan-400`}
-                      />
+                    {({ isActive }) => (
+                      <>
+                        {isActive && (
+                          <span
+                            className={`absolute ${
+                              isRtl ? "right-0 rounded-l-full" : "left-0 rounded-r-full"
+                            } inset-y-1.5 w-1 bg-cyan-400`}
+                            aria-hidden="true"
+                          />
+                        )}
+                        <Icon
+                          size={18}
+                          className={`shrink-0 transition ${
+                            isActive
+                              ? "text-white"
+                              : "text-slate-400 group-hover:text-blue-600 dark:group-hover:text-cyan-400"
+                          }`}
+                          aria-hidden="true"
+                        />
+                        {isCollapsed ? (
+                          // The collapsed rail still needs an accessible name.
+                          <span className="sr-only">{label}</span>
+                        ) : (
+                          <span className="truncate">{label}</span>
+                        )}
+                      </>
                     )}
-                    <Icon
-                      size={18}
-                      className={`shrink-0 transition ${
-                        isActive
-                          ? "text-white"
-                          : "text-slate-400 group-hover:text-blue-600 dark:group-hover:text-cyan-400"
-                      }`}
-                      aria-hidden="true"
-                    />
-                    {!isCollapsed && <span className="truncate">{label}</span>}
-                  </button>
+                  </NavLink>
                 );
               })}
             </nav>
           </div>
 
-          {/* Future Modules Group */}
           <div>
             {!isCollapsed && (
-              <p className="px-3 pb-2 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-400">
+              <p className="px-3 pb-2 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
                 {t("futureModules")}
               </p>
             )}
-            <nav className="space-y-1">
-              {futureItems.map((item) => {
+            {/* Not links and not buttons: these modules do not exist yet, so
+                nothing here is interactive. A control that looked usable but
+                led to an empty screen would be worse than one that plainly
+                announces it is not built. */}
+            <ul className="space-y-1">
+              {FUTURE_NAV_ITEMS.map((item) => {
                 const Icon = item.icon;
                 const label = t(item.labelKey);
                 return (
-                  <button
+                  <li
                     key={item.id}
-                    type="button"
-                    onClick={() => handleItemClick(item, true)}
-                    title={isCollapsed ? `${label} (${t("comingSoon")})` : undefined}
-                    className={`group flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs font-bold text-slate-500 dark:text-slate-400/80 transition hover:bg-slate-100 dark:hover:bg-slate-800/40 hover:text-slate-800 dark:hover:text-slate-300 ${
+                    title={isCollapsed ? `${label} — ${t("comingSoon")}` : undefined}
+                    className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs font-bold text-slate-400 dark:text-slate-500 ${
                       isCollapsed ? "justify-center px-0" : ""
                     }`}
                   >
-                    <div className={`flex items-center gap-3 ${isCollapsed ? "justify-center" : ""}`}>
-                      <Icon
-                        size={17}
-                        className="shrink-0 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300"
-                        aria-hidden="true"
-                      />
+                    <div
+                      className={`flex min-w-0 items-center gap-3 ${
+                        isCollapsed ? "justify-center" : ""
+                      }`}
+                    >
+                      <Icon size={17} className="shrink-0" aria-hidden="true" />
                       {!isCollapsed && <span className="truncate">{label}</span>}
                     </div>
-                    <ComingSoonBadge collapsed={isCollapsed} />
-                  </button>
+                    <ComingSoonBadge collapsed={isCollapsed} label={t("comingSoon")} />
+                  </li>
                 );
               })}
-            </nav>
+            </ul>
           </div>
         </div>
 
-        {/* Desktop Collapse / Expand Footer Toggle */}
-        <div className="hidden border-t border-slate-200/80 dark:border-slate-800/80 p-3 lg:block">
+        <div className="hidden border-t border-slate-200/80 p-3 lg:block dark:border-slate-800/80">
           <button
             type="button"
             onClick={onToggleCollapse}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
+            aria-expanded={!isCollapsed}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
           >
             <CollapseIcon size={18} aria-hidden="true" />
-            {!isCollapsed && <span>{t("collapseSidebar")}</span>}
+            {isCollapsed ? (
+              <span className="sr-only">{t("expandSidebar")}</span>
+            ) : (
+              <span>{t("collapseSidebar")}</span>
+            )}
           </button>
         </div>
       </aside>
