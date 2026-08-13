@@ -12,7 +12,6 @@ import { useLanguage } from "../context/LanguageContext";
 import { useToast } from "../context/ToastContext";
 import { getApiErrorMessage } from "../utils/apiError";
 import {
-  formatNumber,
   formatPercentage,
   formatTimestamp,
   formatVolume,
@@ -276,7 +275,7 @@ export default function HistoryPage() {
                     <Th>{t("lowerTankVolume")}</Th>
                     <Th>{t("pumpState")}</Th>
                     <Th>{t("controlMode")}</Th>
-                    <Th className="pe-5 sm:pe-6">{t("flowRate")}</Th>
+                    <Th className="pe-5 sm:pe-6">{t("waterFlowStatus")}</Th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50 dark:divide-slate-800/60">
@@ -354,10 +353,17 @@ function HistoryRow({ entry, t, language }) {
         )}
       </Td>
       <Td className="pe-5 sm:pe-6">
-        <Cell
-          formatted={formatNumber(entry.flowRateLMin, { decimals: 2, unit: "L/min" })}
-          t={t}
-        />
+        {entry.waterFlowDetected === true ? (
+          <span className="inline-flex rounded-full bg-cyan-100 dark:bg-cyan-950/70 px-2 py-0.5 text-[10px] font-extrabold text-cyan-700 dark:text-cyan-300">
+            {t("waterFlowing")}
+          </span>
+        ) : entry.waterFlowDetected === false ? (
+          <span className="inline-flex rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:text-slate-400">
+            {t("noWaterFlow")}
+          </span>
+        ) : (
+          <MutedCell t={t} />
+        )}
       </Td>
     </tr>
   );

@@ -10,7 +10,7 @@
 // Must be the LAN IP of the machine, never localhost / 127.0.0.1.
 // Re-check with "ipconfig" whenever the laptop rejoins the hotspot,
 // because DHCP can hand out a different address.
-#define SERVER_HOST "172.23.64.1"
+#define SERVER_HOST "10.110.55.157"
 #define SERVER_PORT "5000"
 
 // Built from the parts above so the two endpoints can never drift apart
@@ -38,7 +38,7 @@ const int LOWER_TRIG_PIN = 12;
 const int LOWER_ECHO_PIN = 13;
 
 // Pump relay
-const int RELAY_PIN = 4;
+const int RELAY_PIN = 5;
 
 // =====================================
 // Tank calibration
@@ -88,52 +88,24 @@ unsigned long lastControlFetchTime = 0;
 const unsigned long CONTROL_FETCH_INTERVAL = 2000;
 
 // =====================================
-// Water flow sensor (YF-S201)
+// Water flow presence detection (YF-S201)
 // =====================================
 
 // Signal pin. GPIO 4 is deliberately avoided because it drives the relay.
 const int FLOW_SENSOR_PIN = 18;
 
-// YF-S201 datasheet characteristic: output frequency (Hz) = 7.5 * flow (L/min).
-const float FLOW_CALIBRATION_FACTOR = 7.5;
+// Debounce / loss timeout so detection is stable and does not flicker on individual missed pulses.
+const unsigned long FLOW_OFF_TIMEOUT_MS = 2000;
+const unsigned long FLOW_EVAL_INTERVAL_MS = 200;
 
-// Plausibility ceiling. The small pump physically does ~1-2 L/min, so any window
-// computing above this is a spurious-interrupt burst (electrical noise, often
-// from the pump/relay switching) and is discarded rather than displayed or
-// integrated. Well above the real range, well below the ~100 L/min noise spikes.
-const float MAX_VALID_FLOW_LMIN = 10.0;
-
-// Physical upper-tank capacity. The per-session total is clamped to this so a
-// long run, a miscalibration, or stray pulses can never report more water than
-// the destination tank can physically hold.
-const float UPPER_TANK_CAPACITY_LITRES = 8.0;
-
-// Flow rate and total are recomputed on a fixed ~1 second window.
-const unsigned long FLOW_CALC_INTERVAL = 1000;
-
-// --- Flow data source ---------------------------------------------------------
-// When true, the displayed flow rate and session total are a deterministic
-// simulation. The YF-S201 on GPIO 18 stays wired and its ISR keeps counting, but
-// those pulses are NOT used for the reported flow/total in this mode, so no real
-// sensor value is ever mixed with the simulated value. Set false to fall back to
-// the real pulse-based measurement.
-const bool FLOW_SIMULATION_MODE = true;
-const float SIMULATED_FLOW_L_MIN = 1.5;
-const float MAX_TRANSFER_LITRES = 8.0;
-
-// Incremented in the ISR on every falling edge, then copied and cleared under a
-// short critical section so the main loop can never race the interrupt.
+// Incremented in the ISR on every falling edge, then copied and cleared under a short critical section.
 volatile uint32_t flowPulseCount = 0;
 portMUX_TYPE flowMux = portMUX_INITIALIZER_UNLOCKED;
 
-// Latest computed telemetry. Monitoring only: these values never gate the pump.
-float flowRateLMin = 0.0;
-float totalTransferredLitres = 0.0;
-
-unsigned long lastFlowCalcTime = 0;
-
-// Tracks the pump edge so the session total resets on each OFF -> ON transition.
-bool flowLastPumpRunning = false;
+// Binary water presence status (monitoring only, never controls the pump)
+bool waterFlowDetected = false;
+unsigned long lastFlowPulseTime = 0;
+unsigned long lastFlowEvalTime = 0;
 
 // Counts pulses from the flow sensor. Kept tiny and in IRAM for a fast ISR.
 void IRAM_ATTR pulseCounter() {
@@ -223,8 +195,8 @@ void setup() {
     digitalPinToInterrupt(FLOW_SENSOR_PIN),
     pulseCounter,
     FALLING);
-  lastFlowCalcTime = millis();
-  flowLastPumpRunning = pumpRunning;
+  lastFlowEvalTime = millis();
+  lastFlowPulseTime = 0;
 
   connectWiFi();
   fetchDeviceControlState();
@@ -679,158 +651,34 @@ String getPumpStatus() {
 }
 
 // =====================================
-// Water flow meter
+// Water flow presence detection
 // =====================================
 
-// Dispatches to the active flow source. Monitoring only in BOTH modes: neither
-// path calls pumpOn()/pumpOff(), so flow logic can never control or stop the pump.
+// Evaluates pulse arrival periodically to decide binary waterFlowDetected state.
+// Monitoring only: never calls pumpOn() / pumpOff().
 void updateFlowMeter() {
-  if (FLOW_SIMULATION_MODE) {
-    updateSimulatedFlow();
-  } else {
-    updateMeasuredFlow();
-  }
-}
-
-// Deterministic hardcoded flow. A fixed rate while the pump runs, integrated by
-// real elapsed time, reset per session, and clamped to the transfer capacity.
-// The GPIO 18 pulse counter is deliberately ignored here, so the reported flow
-// and total are purely simulated with no real sensor value mixed in.
-void updateSimulatedFlow() {
-  // New session on OFF -> ON: reset the session total. This is the ONLY reset.
-  if (pumpRunning && !flowLastPumpRunning) {
-    totalTransferredLitres = 0.0;
-    Serial.println("Flow(sim): pump started, session total reset");
-  }
-  flowLastPumpRunning = pumpRunning;
-
-  // Integrate on the REAL elapsed interval, not an assumed 1000 ms.
   unsigned long now = millis();
-  unsigned long elapsedMs = now - lastFlowCalcTime;
-  if (elapsedMs < FLOW_CALC_INTERVAL) {
+  if (now - lastFlowEvalTime < FLOW_EVAL_INTERVAL_MS) {
     return;
   }
-  lastFlowCalcTime = now;
+  lastFlowEvalTime = now;
 
-  // Pump OFF: no flow. Keep the final total visible (never reset or add here).
-  if (!pumpRunning) {
-    flowRateLMin = 0.0;
-    Serial.print("[FLOW sim] pump=OFF rate=0.00 L/min totalL=");
-    Serial.println(totalTransferredLitres, 3);
-    return;
-  }
-
-  // Pump ON but this session already delivered a full tank: hold at capacity and
-  // report no flow. The pump itself is left to the existing upper-tank full
-  // protection in updatePump() — forcing it off here would change pump-control
-  // safety logic, which must stay unchanged, so we intentionally do not.
-  if (totalTransferredLitres >= MAX_TRANSFER_LITRES) {
-    totalTransferredLitres = MAX_TRANSFER_LITRES;
-    flowRateLMin = 0.0;
-    Serial.print("[FLOW sim] pump=ON capacity reached rate=0.00 L/min totalL=");
-    Serial.println(totalTransferredLitres, 3);
-    return;
-  }
-
-  // Pump ON, still filling: fixed simulated rate, accumulated by real elapsed time.
-  flowRateLMin = SIMULATED_FLOW_L_MIN;
-  float intervalLitres = SIMULATED_FLOW_L_MIN * elapsedMs / 60000.0;
-  totalTransferredLitres += intervalLitres;
-
-  // Never exceed the transfer capacity; on reaching it, report no more flow.
-  if (totalTransferredLitres >= MAX_TRANSFER_LITRES) {
-    totalTransferredLitres = MAX_TRANSFER_LITRES;
-    flowRateLMin = 0.0;
-  }
-
-  Serial.print("[FLOW sim] pump=ON rate=");
-  Serial.print(flowRateLMin, 2);
-  Serial.print(" L/min elapsedMs=");
-  Serial.print(elapsedMs);
-  Serial.print(" intervalL=");
-  Serial.print(intervalLitres, 4);
-  Serial.print(" totalL=");
-  Serial.println(totalTransferredLitres, 3);
-}
-
-// Real YF-S201 pulse-based measurement. Unused while FLOW_SIMULATION_MODE is true.
-// Monitoring only: reads pumpRunning to reset the session total but never calls
-// pumpOn()/pumpOff().
-void updateMeasuredFlow() {
-  // Reset the session total the moment the pump begins a new fill (OFF -> ON).
-  if (pumpRunning && !flowLastPumpRunning) {
-    totalTransferredLitres = 0.0;
-    Serial.println("Flow: pump started, session total reset");
-  }
-  flowLastPumpRunning = pumpRunning;
-
-  // Measure the REAL elapsed interval instead of assuming a fixed 1000 ms, so a
-  // slow loop pass (a blocking HTTP POST, sensor reads) can never distort the
-  // integrated volume.
-  unsigned long now = millis();
-  unsigned long elapsedMs = now - lastFlowCalcTime;
-  if (elapsedMs < FLOW_CALC_INTERVAL) {
-    return;
-  }
-  lastFlowCalcTime = now;
-
-  // Copy and clear the shared counter in one short critical section so a pulse
-  // arriving mid-read is never lost or double counted.
   uint32_t copiedPulses;
   portENTER_CRITICAL(&flowMux);
   copiedPulses = flowPulseCount;
   flowPulseCount = 0;
   portEXIT_CRITICAL(&flowMux);
 
-  // All flow math is float so a small window volume such as 0.02 L is added to
-  // the running total instead of being truncated to zero.
-  // YF-S201: frequency (Hz) = 7.5 * flow (L/min), so flow = frequency / 7.5.
-  // (No * 60 here — the /7.5 already yields L/min directly.)
-  float elapsedSeconds = elapsedMs / 1000.0;
-  float pulseFrequencyHz = copiedPulses / elapsedSeconds;         // Hz
-  flowRateLMin = pulseFrequencyHz / FLOW_CALIBRATION_FACTOR;      // L/min
-
-  // Volume delivered during THIS interval (computed before any accumulation).
-  float intervalLitres = flowRateLMin * elapsedMs / 60000.0;      // L
-
-  // TEMP DEBUG: full flow pipeline every ~1 s. Remove once verified.
-  Serial.print("[FLOW] copiedPulses=");
-  Serial.print(copiedPulses);
-  Serial.print(" elapsedMs=");
-  Serial.print(elapsedMs);
-  Serial.print(" freqHz=");
-  Serial.print(pulseFrequencyHz, 2);
-  Serial.print(" rate=");
-  Serial.print(flowRateLMin, 3);
-  Serial.print(" L/min intervalL=");
-  Serial.print(intervalLitres, 4);
-
-  // Reject spurious noise bursts: a value above the plausibility ceiling is not
-  // displayed as flow and is not integrated into the session total.
-  if (flowRateLMin > MAX_VALID_FLOW_LMIN) {
-    Serial.print(" -> REJECTED (> ");
-    Serial.print(MAX_VALID_FLOW_LMIN, 1);
-    Serial.println(" L/min noise)");
-    // Zero the reported rate so the noise spike is never displayed, and return
-    // before accumulation so it is never added to the session total.
-    flowRateLMin = 0.0;
-    return;
+  if (copiedPulses > 0) {
+    lastFlowPulseTime = now;
+    if (!waterFlowDetected) {
+      waterFlowDetected = true;
+      Serial.println("[FLOW] Water flow detected");
+    }
+  } else if (waterFlowDetected && (now - lastFlowPulseTime >= FLOW_OFF_TIMEOUT_MS)) {
+    waterFlowDetected = false;
+    Serial.println("[FLOW] No water flow");
   }
-
-  totalTransferredLitres += intervalLitres;
-
-  // Clamp the session total to [0, upper-tank capacity].
-  if (totalTransferredLitres < 0.0) {
-    totalTransferredLitres = 0.0;
-  }
-  if (totalTransferredLitres > UPPER_TANK_CAPACITY_LITRES) {
-    totalTransferredLitres = UPPER_TANK_CAPACITY_LITRES;
-  }
-
-  Serial.print(" totalL=");
-  Serial.print(totalTransferredLitres, 3);
-  Serial.print(" pump=");
-  Serial.println(pumpRunning ? "ON" : "OFF");
 }
 
 // =====================================
@@ -925,17 +773,8 @@ int sendReading(
   json += pumpMode;
   json += "\",";
 
-  json += "\"flowRateLMin\":";
-  json += String(flowRateLMin, 2);
-  json += ",";
-
-  json += "\"totalTransferredLitres\":";
-  json += String(totalTransferredLitres, 2);
-  json += ",";
-
-  json += "\"flowDataMode\":\"";
-  json += FLOW_SIMULATION_MODE ? "simulated" : "measured";
-  json += "\"";
+  json += "\"waterFlowDetected\":";
+  json += waterFlowDetected ? "true" : "false";
 
   json += "}";
 

@@ -94,11 +94,14 @@ function normalizeReading(value) {
     pumpRunning: value.pumpRunning ?? (pumpStatus ? pumpStatus === "ON" : null),
     systemEnabled: value.systemEnabled ?? null,
     pumpMode: value.pumpMode ?? null,
-    flowRateLMin: isFiniteNumber(value.flowRateLMin) ? value.flowRateLMin : null,
-    totalTransferredLitres: isFiniteNumber(value.totalTransferredLitres)
-      ? value.totalTransferredLitres
-      : null,
-    flowDataMode: value.flowDataMode ?? null,
+    waterFlowDetected:
+      typeof value.waterFlowDetected === "boolean"
+        ? value.waterFlowDetected
+        : value.waterFlowDetected === "true" || value.waterFlowDetected === 1
+        ? true
+        : value.waterFlowDetected === "false" || value.waterFlowDetected === 0
+        ? false
+        : null,
     // Normalised to a number once, so every consumer compares like with like.
     receivedAtMs: readingTime(value),
   };

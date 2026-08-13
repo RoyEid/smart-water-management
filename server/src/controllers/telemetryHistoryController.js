@@ -110,9 +110,7 @@ export async function exportTelemetryHistory(req, res, next) {
       "pumpStatus",
       "pumpMode",
       "systemEnabled",
-      "flowRateLMin",
-      "totalTransferredLitres",
-      "flowDataMode",
+      "waterFlowDetected",
     ];
 
     const lines = [columns.join(",")];
@@ -133,9 +131,7 @@ export async function exportTelemetryHistory(req, res, next) {
           reading.pumpStatus,
           reading.pumpMode,
           reading.systemEnabled,
-          reading.flowRateLMin,
-          reading.totalTransferredLitres,
-          reading.flowDataMode,
+          reading.waterFlowDetected ?? "",
         ]
           .map(csvCell)
           .join(",")

@@ -160,9 +160,7 @@ export default function DashboardPage() {
 
       <section>
         <WaterFlowCard
-          flowRate={reading?.flowRateLMin}
-          totalVolume={reading?.totalTransferredLitres}
-          flowDataMode={reading?.flowDataMode}
+          waterFlowDetected={reading?.waterFlowDetected}
           isOnline={isOnline}
         />
       </section>

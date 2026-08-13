@@ -35,13 +35,8 @@ const ultrasonicReadingSchema = new mongoose.Schema(
     sensorStatus: { type: String, default: null },
     failedSensor: { type: String, default: null },
 
-    // Optional YF-S201 flow telemetry.
-    // Ultrasonic-only firmware does not send these, so they stay optional and
-    // default to null — a null simply means "no flow data in this reading".
-    flowRateLMin: { type: Number, default: null },
-    totalTransferredLitres: { type: Number, default: null },
-    // "simulated" | "measured" | null — which source produced the flow values.
-    flowDataMode: { type: String, default: null },
+    // YF-S201 binary flow presence detection (true = flow, false = no flow, null = missing/waiting).
+    waterFlowDetected: { type: Boolean, default: null },
 
     receivedAt: { type: Date, default: Date.now, index: true },
   },

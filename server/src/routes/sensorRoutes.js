@@ -48,14 +48,8 @@ const ultrasonicReadingSchema = z.object({
   pumpMode: z.enum(["AUTO", "MANUAL"]).optional(),
   sensorStatus: z.string().optional(),
   failedSensor: z.string().optional(),
-  // Optional YF-S201 flow telemetry. Older/ultrasonic-only firmware omits these,
-  // so they must never be required — requiring them would reject every reading
-  // that predates the flow sensor with a 400. Accepted only as finite, >= 0.
-  flowRateLMin: z.number().finite().min(0).optional(),
-  totalTransferredLitres: z.number().finite().min(0).optional(),
-  // Marks whether the flow values are the real measurement or the hardcoded
-  // simulation. Optional so ultrasonic-only firmware is still accepted.
-  flowDataMode: z.enum(["simulated", "measured"]).optional(),
+  // YF-S201 binary flow presence detection
+  waterFlowDetected: z.boolean().nullable().optional(),
   // Single-tank backward compatibility fields:
   distanceCm: z.number().finite().min(0).max(400).optional(),
   percentage: z.number().finite().min(0).max(100).optional(),

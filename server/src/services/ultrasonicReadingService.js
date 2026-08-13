@@ -4,11 +4,6 @@ import { syncAlerts } from "./alertService.js";
 
 const ONLINE_WINDOW_MS = 10_000;
 
-// Physical upper-tank capacity. The per-session transferred volume is clamped to
-// this so a miscalibrated or noisy device can never persist or broadcast a total
-// larger than the destination tank can hold.
-const UPPER_TANK_CAPACITY_LITRES = 8.0;
-
 // Kept in memory so the dashboard and the ESP32 response path never wait on
 // (or fail because of) MongoDB. Mongo is the durable copy, this is the hot one.
 let latestReading = null;
@@ -37,12 +32,8 @@ function normalizePayload(payload) {
     pumpMode = "AUTO",
     sensorStatus,
     failedSensor,
-    // Optional YF-S201 flow telemetry — absent in ultrasonic-only firmware.
-    // The device is the sole source of the session total; the backend forwards
-    // it as-is and never re-accumulates.
-    flowRateLMin,
-    totalTransferredLitres,
-    flowDataMode,
+    // YF-S201 binary flow telemetry
+    waterFlowDetected,
     // Single-tank backward compatibility fields:
     distanceCm,
     percentage,
@@ -77,33 +68,20 @@ function normalizePayload(payload) {
     pumpMode: String(pumpMode || "AUTO"),
     sensorStatus: sensorStatus ? String(sensorStatus) : null,
     failedSensor: failedSensor ? String(failedSensor) : null,
-    flowRateLMin: normalizeFlowValue(flowRateLMin),
-    totalTransferredLitres: normalizeTransferredVolume(totalTransferredLitres),
-    flowDataMode: flowDataMode ? String(flowDataMode) : null,
+    waterFlowDetected: normalizeWaterFlowDetected(waterFlowDetected),
     receivedAt,
   };
 }
 
 /**
- * Flow telemetry is optional and monitoring-only. Anything that is not a
- * finite, non-negative number collapses to null so the dashboard shows
- * "Waiting for data..." instead of NaN, -1, or a bogus spike.
+ * Normalizes binary water flow presence telemetry.
+ * Distinguishes true, false, and null (missing/waiting data).
  */
-function normalizeFlowValue(value) {
-  const number = Number(value);
-  return Number.isFinite(number) && number >= 0 ? number : null;
-}
-
-/**
- * The transferred total represents a single pump session, so it is additionally
- * clamped to the upper-tank capacity — the pump cannot deliver more than the
- * destination tank holds in one fill. Defense in depth: the firmware clamps too,
- * but this guarantees no over-capacity value is ever stored or broadcast.
- */
-function normalizeTransferredVolume(value) {
-  const number = normalizeFlowValue(value);
-  if (number === null) return null;
-  return Math.min(number, UPPER_TANK_CAPACITY_LITRES);
+function normalizeWaterFlowDetected(value) {
+  if (typeof value === "boolean") return value;
+  if (value === "true" || value === "1" || value === 1) return true;
+  if (value === "false" || value === "0" || value === 0) return false;
+  return null;
 }
 
 export function saveLatestReading(payload) {
@@ -162,9 +140,7 @@ export async function hydrateLatestReading() {
       pumpMode: stored.pumpMode,
       sensorStatus: stored.sensorStatus ?? null,
       failedSensor: stored.failedSensor ?? null,
-      flowRateLMin: normalizeFlowValue(stored.flowRateLMin),
-      totalTransferredLitres: normalizeTransferredVolume(stored.totalTransferredLitres),
-      flowDataMode: stored.flowDataMode ?? null,
+      waterFlowDetected: normalizeWaterFlowDetected(stored.waterFlowDetected),
       receivedAt: new Date(stored.receivedAt),
     };
 
@@ -192,9 +168,7 @@ function serializeReading(reading) {
     pumpMode: reading.pumpMode,
     sensorStatus: reading.sensorStatus,
     failedSensor: reading.failedSensor,
-    flowRateLMin: reading.flowRateLMin,
-    totalTransferredLitres: reading.totalTransferredLitres,
-    flowDataMode: reading.flowDataMode,
+    waterFlowDetected: reading.waterFlowDetected ?? null,
     receivedAt: timestamp,
     timestamp,
     // Backward compatibility for single-tank clients

@@ -1,4 +1,4 @@
-import { Droplets, Gauge, Radio, Waves } from "lucide-react";
+import { Droplets, Radio, Waves } from "lucide-react";
 import MetricCard from "../components/dashboard/MetricCard";
 import PageHeader from "../components/dashboard/PageHeader";
 import WaterLevelChart from "../components/dashboard/WaterLevelChart";
@@ -104,30 +104,20 @@ export default function LiveMonitoringPage() {
               accent="blue"
             />
             <MetricCard
-              icon={Gauge}
-              label={t("currentFlowRate")}
-              formatted={formatNumber(reading?.flowRateLMin, {
-                decimals: 2,
-                unit: "L/min",
-              })}
-              detail={
-                reading?.flowDataMode === "simulated"
-                  ? t("simulatedData")
-                  : reading?.flowDataMode === "measured"
-                  ? t("measuredData")
-                  : t("notReported")
-              }
-              accent="emerald"
-            />
-            <MetricCard
-              icon={Droplets}
-              label={t("sessionTransferred")}
-              formatted={formatNumber(reading?.totalTransferredLitres, {
-                decimals: 2,
-                unit: "L",
-              })}
-              detail={t("capacityDetail")}
-              accent="violet"
+              icon={Waves}
+              label={t("waterFlowStatus")}
+              formatted={{
+                hasValue: true,
+                text: !isOnline
+                  ? t("sensorOffline")
+                  : reading?.waterFlowDetected === true
+                  ? t("waterFlowing")
+                  : reading?.waterFlowDetected === false
+                  ? t("noWaterFlow")
+                  : t("waitingForData"),
+              }}
+              detail="YF-S201 (GPIO 18)"
+              accent={reading?.waterFlowDetected === true ? "cyan" : "slate"}
             />
           </section>
 

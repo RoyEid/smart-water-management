@@ -13,7 +13,6 @@ import { useLanguage } from "../context/LanguageContext";
 import { useToast } from "../context/ToastContext";
 import { getApiErrorMessage } from "../utils/apiError";
 import {
-  formatNumber,
   formatPercentage,
   formatTimestamp,
   formatVolume,
@@ -333,7 +332,7 @@ export default function DeviceDetailPage() {
                   <th scope="col" className="px-3 py-2.5 text-start">{t("upperTankLevel")}</th>
                   <th scope="col" className="px-3 py-2.5 text-start">{t("lowerTankLevel")}</th>
                   <th scope="col" className="px-3 py-2.5 text-start">{t("pumpState")}</th>
-                  <th scope="col" className="px-3 py-2.5 text-start pe-5 sm:pe-6">{t("flowRate")}</th>
+                  <th scope="col" className="px-3 py-2.5 text-start pe-5 sm:pe-6">{t("waterFlowStatus")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50 font-semibold text-slate-700 dark:divide-slate-800/60 dark:text-slate-300">
@@ -351,8 +350,12 @@ export default function DeviceDetailPage() {
                     <td className="px-3 py-2.5">
                       {entry.pumpStatus === "ON" ? t("on") : entry.pumpStatus === "OFF" ? t("off") : "—"}
                     </td>
-                    <td className="px-3 py-2.5 pe-5 tabular-nums sm:pe-6">
-                      {formatNumber(entry.flowRateLMin, { decimals: 2, unit: "L/min" }).text}
+                    <td className="px-3 py-2.5 pe-5 sm:pe-6">
+                      {entry.waterFlowDetected === true
+                        ? t("waterFlowing")
+                        : entry.waterFlowDetected === false
+                        ? t("noWaterFlow")
+                        : "—"}
                     </td>
                   </tr>
                 ))}

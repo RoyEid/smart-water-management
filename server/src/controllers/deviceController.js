@@ -38,8 +38,7 @@ function serializeDevice(device, latestReading, control) {
     pumpMode: isLatestDevice ? control.pumpMode : null,
     systemEnabled: isLatestDevice ? control.systemEnabled : null,
     latestTelemetryAt: reading?.receivedAt ?? null,
-    flowRateLMin: reading?.flowRateLMin ?? null,
-    totalTransferredLitres: reading?.totalTransferredLitres ?? null,
+    waterFlowDetected: reading?.waterFlowDetected ?? null,
   };
 }
 
@@ -103,11 +102,8 @@ export function serializeStoredReading(reading) {
     systemEnabled: reading.systemEnabled ?? null,
     sensorStatus: reading.sensorStatus ?? null,
     failedSensor: reading.failedSensor ?? null,
-    // Flow fields stay null when the firmware did not report them. They are
-    // never substituted with 0, which would read as "measured no flow".
-    flowRateLMin: reading.flowRateLMin ?? null,
-    totalTransferredLitres: reading.totalTransferredLitres ?? null,
-    flowDataMode: reading.flowDataMode ?? null,
+    // Water flow state stays null when the firmware did not report it.
+    waterFlowDetected: reading.waterFlowDetected ?? null,
     receivedAt: reading.receivedAt,
   };
 }
