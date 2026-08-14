@@ -7,6 +7,7 @@ import {
   // Explicit extension so this module also resolves under plain Node, which
   // runs the unit tests; Vite resolves it either way.
 } from "./telemetryFormat.js";
+import { calculateTankTransfer } from "./tankTransferMath.js";
 
 /**
  * Explains why the pump is in the state it is in.
@@ -19,12 +20,22 @@ import {
  * Returns a translation key plus parameters rather than a sentence, so the
  * reasoning is available in all three languages.
  */
-export function derivePumpReasoning({ reading, controlState, isOnline }) {
+export function derivePumpReasoning({ reading, controlState, isOnline, tanks, device }) {
   const upperLevel = reading?.upperTank?.percentage;
   const lowerLevel = reading?.lowerTank?.percentage;
   const pumpStatus = reading?.pumpStatus ?? null;
   const systemEnabled = controlState?.systemEnabled;
   const pumpMode = controlState?.pumpMode ?? reading?.pumpMode ?? null;
+
+  const targetTanks = tanks ?? device?.tanks ?? null;
+  const transfer = calculateTankTransfer({
+    upperPercentage: upperLevel,
+    upperCapacityLiters: targetTanks?.upper?.capacityLiters,
+    upperTargetPercentage: PUMP_STOP_UPPER_LEVEL,
+    lowerPercentage: lowerLevel,
+    lowerCapacityLiters: targetTanks?.lower?.capacityLiters,
+    lowerMinimumPercentage: PUMP_SAFETY_STOP_LOWER_LEVEL,
+  });
 
   // Ordered by precedence: the first condition that applies is the operative
   // one, and safety conditions outrank operational ones.
@@ -82,7 +93,11 @@ export function derivePumpReasoning({ reading, controlState, isOnline }) {
   if (pumpStatus === "ON") {
     return {
       key: "reasonAutoRunning",
-      params: { level: upperLevel.toFixed(1), threshold: PUMP_STOP_UPPER_LEVEL },
+      params: {
+        level: upperLevel.toFixed(1),
+        threshold: PUMP_STOP_UPPER_LEVEL,
+        transferLiters: transfer.maximumSafeTransferLiters != null ? Math.round(transfer.maximumSafeTransferLiters) : null,
+      },
       tone: "success",
       blocked: false,
     };

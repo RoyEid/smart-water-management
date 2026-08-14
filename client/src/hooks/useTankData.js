@@ -4,6 +4,7 @@ import sensorSocket, {
   releaseSensorSocket,
 } from "../services/socket";
 import { fetchLatestUltrasonicReading } from "../services/sensorApi";
+import { fetchDevice, fetchDevices } from "../services/deviceApi";
 import { getApiErrorMessage, isUnauthorized } from "../utils/apiError";
 
 const ONLINE_WINDOW_MS = 10_000;
@@ -53,7 +54,6 @@ function isReading(value) {
   }
 
   return (
-    isFiniteNumber(value.distanceCm) &&
     isFiniteNumber(value.percentage) &&
     isFiniteNumber(value.waterHeightCm) &&
     typeof value.tankStatus === "string"
@@ -118,6 +118,7 @@ function normalizeReading(value) {
 export default function useTankData() {
   const [reading, setReading] = useState(null);
   const [readings, setReadings] = useState([]);
+  const [device, setDevice] = useState(null);
   const [error, setError] = useState("");
   const [unauthorized, setUnauthorized] = useState(false);
   // "loading" until the first fetch resolves, so the UI can show a skeleton
@@ -130,6 +131,18 @@ export default function useTankData() {
   // Keeps the newest-timestamp guard across renders without re-running the
   // subscription effect, which would drop and re-add listeners.
   const newestRef = useRef(0);
+
+  const refetchDevice = useCallback(async (targetDeviceId = "tank-01") => {
+    try {
+      const target = reading?.deviceId || targetDeviceId;
+      const res = await fetchDevice(target);
+      if (res?.device) {
+        setDevice(res.device);
+      }
+    } catch {
+      // Ignore device fetch errors silently if device isn't registered yet
+    }
+  }, [reading]);
 
   const retry = useCallback(() => {
     setError("");
@@ -161,7 +174,21 @@ export default function useTankData() {
 
     const loadLatest = async () => {
       try {
-        const latest = await fetchLatestUltrasonicReading();
+        const [latest] = await Promise.all([
+          fetchLatestUltrasonicReading(),
+          (async () => {
+            try {
+              const res = await fetchDevices();
+              const deviceList = res?.devices || (Array.isArray(res) ? res : []);
+              if (mounted && deviceList.length > 0) {
+                setDevice(deviceList[0]);
+              }
+            } catch {
+              // Silently ignore if device list fails
+            }
+          })(),
+        ]);
+
         if (!mounted) return;
 
         if (!latest) {
@@ -249,6 +276,10 @@ export default function useTankData() {
   return {
     reading,
     readings,
+    device,
+    tanks: device?.tanks ?? null,
+    refetchDevice,
+    setDevice,
     isOnline,
     isStale,
     isLoading,

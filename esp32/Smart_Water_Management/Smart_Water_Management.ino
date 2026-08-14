@@ -10,7 +10,7 @@
 // Must be the LAN IP of the machine, never localhost / 127.0.0.1.
 // Re-check with "ipconfig" whenever the laptop rejoins the hotspot,
 // because DHCP can hand out a different address.
-#define SERVER_HOST "10.110.55.157"
+#define SERVER_HOST "10.216.176.157"
 #define SERVER_PORT "5000"
 
 // Built from the parts above so the two endpoints can never drift apart
@@ -41,15 +41,17 @@ const int LOWER_ECHO_PIN = 13;
 const int RELAY_PIN = 5;
 
 // =====================================
-// Tank calibration
+// Tank usable height & dead-zone configuration
 // =====================================
 
-// Adjust after measuring the real tanks
-const float UPPER_EMPTY_DISTANCE = 25.0;
-const float UPPER_FULL_DISTANCE = 5.0;
+// Synced dynamically from backend. Retained in memory across network drops.
+float upperTankUsableHeightCm = 20.0; // Fallback default until synced
+float lowerTankUsableHeightCm = 20.0; // Fallback default until synced
+float upperCapacityLiters = 1000.0;    // Fallback default until synced
+float lowerCapacityLiters = 1000.0;    // Fallback default until synced
 
-const float LOWER_EMPTY_DISTANCE = 25.0;
-const float LOWER_FULL_DISTANCE = 5.0;
+// Internal mounting dead-zone (sensor face to full water mark)
+const float SENSOR_MOUNTING_OFFSET_CM = 5.0;
 
 // =====================================
 // Automatic pump thresholds
@@ -272,23 +274,19 @@ void loop() {
 
   float upperPercentage = calculatePercentage(
     upperDistance,
-    UPPER_EMPTY_DISTANCE,
-    UPPER_FULL_DISTANCE);
+    upperTankUsableHeightCm);
 
   float lowerPercentage = calculatePercentage(
     lowerDistance,
-    LOWER_EMPTY_DISTANCE,
-    LOWER_FULL_DISTANCE);
+    lowerTankUsableHeightCm);
 
   float upperWaterHeight = calculateWaterHeight(
     upperDistance,
-    UPPER_EMPTY_DISTANCE,
-    UPPER_FULL_DISTANCE);
+    upperTankUsableHeightCm);
 
   float lowerWaterHeight = calculateWaterHeight(
     lowerDistance,
-    LOWER_EMPTY_DISTANCE,
-    LOWER_FULL_DISTANCE);
+    lowerTankUsableHeightCm);
 
   String upperStatus =
     getTankStatus(upperPercentage);
@@ -408,6 +406,66 @@ void fetchDeviceControlState() {
       manualPumpState = "OFF";
     }
 
+    int upperIdx = payload.indexOf("\"upperTankHeightCm\":");
+    if (upperIdx != -1) {
+      int start = upperIdx + 20;
+      int end = payload.indexOf(",", start);
+      if (end == -1) end = payload.indexOf("}", start);
+      if (end != -1) {
+        String valStr = payload.substring(start, end);
+        valStr.trim();
+        if (valStr != "null") {
+          float val = valStr.toFloat();
+          if (val > 0.0) upperTankUsableHeightCm = val;
+        }
+      }
+    }
+
+    int lowerIdx = payload.indexOf("\"lowerTankHeightCm\":");
+    if (lowerIdx != -1) {
+      int start = lowerIdx + 20;
+      int end = payload.indexOf(",", start);
+      if (end == -1) end = payload.indexOf("}", start);
+      if (end != -1) {
+        String valStr = payload.substring(start, end);
+        valStr.trim();
+        if (valStr != "null") {
+          float val = valStr.toFloat();
+          if (val > 0.0) lowerTankUsableHeightCm = val;
+        }
+      }
+    }
+
+    int upperCapIdx = payload.indexOf("\"upperCapacityLiters\":");
+    if (upperCapIdx != -1) {
+      int start = upperCapIdx + 22;
+      int end = payload.indexOf(",", start);
+      if (end == -1) end = payload.indexOf("}", start);
+      if (end != -1) {
+        String valStr = payload.substring(start, end);
+        valStr.trim();
+        if (valStr != "null") {
+          float val = valStr.toFloat();
+          if (val > 0.0) upperCapacityLiters = val;
+        }
+      }
+    }
+
+    int lowerCapIdx = payload.indexOf("\"lowerCapacityLiters\":");
+    if (lowerCapIdx != -1) {
+      int start = lowerCapIdx + 22;
+      int end = payload.indexOf(",", start);
+      if (end == -1) end = payload.indexOf("}", start);
+      if (end != -1) {
+        String valStr = payload.substring(start, end);
+        valStr.trim();
+        if (valStr != "null") {
+          float val = valStr.toFloat();
+          if (val > 0.0) lowerCapacityLiters = val;
+        }
+      }
+    }
+
     Serial.println("Control updated:");
     Serial.print("System: ");
     Serial.println(
@@ -511,31 +569,23 @@ float readStableDistance(
 
 float calculatePercentage(
   float distance,
-  float emptyDistance,
-  float fullDistance) {
-  float percentage =
-    ((emptyDistance - distance) / (emptyDistance - fullDistance)) * 100.0;
+  float usableHeightCm) {
+  if (usableHeightCm <= 0.0) return 0.0;
+  float emptyDistance = SENSOR_MOUNTING_OFFSET_CM + usableHeightCm;
+  float waterHeight = constrain(emptyDistance - distance, 0.0, usableHeightCm);
+  float percentage = (waterHeight / usableHeightCm) * 100.0;
 
-  return constrain(
-    percentage,
-    0.0,
-    100.0);
+  return constrain(percentage, 0.0, 100.0);
 }
 
 float calculateWaterHeight(
   float distance,
-  float emptyDistance,
-  float fullDistance) {
-  float maximumWaterHeight =
-    emptyDistance - fullDistance;
+  float usableHeightCm) {
+  if (usableHeightCm <= 0.0) return 0.0;
+  float emptyDistance = SENSOR_MOUNTING_OFFSET_CM + usableHeightCm;
+  float waterHeight = constrain(emptyDistance - distance, 0.0, usableHeightCm);
 
-  float waterHeight =
-    emptyDistance - distance;
-
-  return constrain(
-    waterHeight,
-    0.0,
-    maximumWaterHeight);
+  return waterHeight;
 }
 
 String getTankStatus(float percentage) {
@@ -592,27 +642,36 @@ void updatePump(
 
     return;
   }
-  // Automatic mode
-  if (
-    !pumpRunning && upperPercentage <= UPPER_PUMP_ON_LEVEL && lowerPercentage >= LOWER_START_MIN_LEVEL) {
-    Serial.println(
-      "AUTO: Upper tank low and lower tank has water");
+  // Automatic mode — Capacity-aware transfer reasoning
+  float upperCurrentLiters = (upperPercentage / 100.0f) * upperCapacityLiters;
+  float upperTargetLiters = (UPPER_PUMP_OFF_LEVEL / 100.0f) * upperCapacityLiters;
+  float upperLitersNeeded = max(0.0f, upperTargetLiters - upperCurrentLiters);
+
+  float lowerCurrentLiters = (lowerPercentage / 100.0f) * lowerCapacityLiters;
+  float lowerMinimumLiters = (LOWER_STOP_LEVEL / 100.0f) * lowerCapacityLiters;
+  float lowerAvailableLiters = max(0.0f, lowerCurrentLiters - lowerMinimumLiters);
+
+  float maximumSafeTransferLiters = min(upperLitersNeeded, lowerAvailableLiters);
+
+  if (!pumpRunning && upperPercentage <= UPPER_PUMP_ON_LEVEL && lowerAvailableLiters > 0.0f && lowerPercentage >= LOWER_START_MIN_LEVEL) {
+    Serial.print("AUTO: Refill starting. Needed: ");
+    Serial.print(upperLitersNeeded);
+    Serial.print(" L | Available: ");
+    Serial.print(lowerAvailableLiters);
+    Serial.print(" L | Max transfer: ");
+    Serial.print(maximumSafeTransferLiters);
+    Serial.println(" L");
 
     pumpOn();
   }
 
-  if (
-    pumpRunning && (upperPercentage >= UPPER_PUMP_OFF_LEVEL || lowerPercentage <= LOWER_STOP_LEVEL)) {
-    if (
-      upperPercentage >= UPPER_PUMP_OFF_LEVEL) {
-      Serial.println(
-        "AUTO: Upper tank is full");
+  if (pumpRunning && (upperPercentage >= UPPER_PUMP_OFF_LEVEL || lowerAvailableLiters <= 0.0f || lowerPercentage <= LOWER_STOP_LEVEL)) {
+    if (upperPercentage >= UPPER_PUMP_OFF_LEVEL) {
+      Serial.println("AUTO: Upper tank reached target level (90%)");
     }
 
-    if (
-      lowerPercentage <= LOWER_STOP_LEVEL) {
-      Serial.println(
-        "AUTO: Lower tank reached minimum level");
+    if (lowerAvailableLiters <= 0.0f || lowerPercentage <= LOWER_STOP_LEVEL) {
+      Serial.println("AUTO: Lower tank reached minimum reserve level (10%). Transfer stopped.");
     }
 
     pumpOff();

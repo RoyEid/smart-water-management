@@ -1,4 +1,5 @@
 import DeviceControlState from "../models/DeviceControlState.js";
+import Device from "../models/Device.js";
 
 const DEFAULT_DEVICE_ID = "tank-01";
 
@@ -23,6 +24,28 @@ function serializeState() {
 
 export function getDeviceControlState() {
   return serializeState();
+}
+
+export async function getDeviceControlStateAsync(deviceId = DEFAULT_DEVICE_ID) {
+  const base = serializeState();
+  try {
+    const device = await Device.findOne({ deviceId }).lean();
+    return {
+      ...base,
+      upperTankHeightCm: device?.tanks?.upper?.heightCm ?? null,
+      lowerTankHeightCm: device?.tanks?.lower?.heightCm ?? null,
+      upperCapacityLiters: device?.tanks?.upper?.capacityLiters ?? null,
+      lowerCapacityLiters: device?.tanks?.lower?.capacityLiters ?? null,
+    };
+  } catch {
+    return {
+      ...base,
+      upperTankHeightCm: null,
+      lowerTankHeightCm: null,
+      upperCapacityLiters: null,
+      lowerCapacityLiters: null,
+    };
+  }
 }
 
 export function setDeviceControlState(updates = {}) {

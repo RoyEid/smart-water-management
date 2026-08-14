@@ -8,6 +8,7 @@ import {
   ErrorState,
 } from "../components/ui/StateViews";
 import { fetchDevice, fetchTelemetryHistory, renameDevice } from "../services/deviceApi";
+import TankConfigForm from "../components/devices/TankConfigForm";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 import { useToast } from "../context/ToastContext";
@@ -227,6 +228,13 @@ export default function DeviceDetailPage() {
         </Link>
       </section>
 
+      {/* Tank Parameters & Configuration */}
+      <TankConfigForm
+        key={`${device.deviceId}-${device.tanks?.configuredAt || "new"}`}
+        device={device}
+        onUpdated={setRenamedDevice}
+      />
+
       {/* Latest telemetry */}
       <section className="rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
         <h3 className="text-sm font-extrabold text-slate-900 dark:text-slate-100">
@@ -243,9 +251,17 @@ export default function DeviceDetailPage() {
             />
             <DetailRow
               label={t("upperTankVolume")}
-              value={formatVolume(lastStored.upperTank?.percentage).text}
+              value={
+                formatVolume(lastStored.upperTank?.percentage, {
+                  capacityLiters: device?.tanks?.upper?.capacityLiters,
+                }).text
+              }
               t={t}
-              missing={!formatVolume(lastStored.upperTank?.percentage).hasValue}
+              missing={
+                !formatVolume(lastStored.upperTank?.percentage, {
+                  capacityLiters: device?.tanks?.upper?.capacityLiters,
+                }).hasValue
+              }
             />
             <DetailRow
               label={t("lowerTankLevel")}
@@ -255,9 +271,17 @@ export default function DeviceDetailPage() {
             />
             <DetailRow
               label={t("lowerTankVolume")}
-              value={formatVolume(lastStored.lowerTank?.percentage).text}
+              value={
+                formatVolume(lastStored.lowerTank?.percentage, {
+                  capacityLiters: device?.tanks?.lower?.capacityLiters,
+                }).text
+              }
               t={t}
-              missing={!formatVolume(lastStored.lowerTank?.percentage).hasValue}
+              missing={
+                !formatVolume(lastStored.lowerTank?.percentage, {
+                  capacityLiters: device?.tanks?.lower?.capacityLiters,
+                }).hasValue
+              }
             />
             <DetailRow
               label={t("upperSensor")}

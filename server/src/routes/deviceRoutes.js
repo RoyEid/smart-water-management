@@ -9,12 +9,12 @@ import {
   listDevices,
   getDevice,
   renameDevice,
+  updateTankConfig,
 } from "../controllers/deviceController.js";
 import {
   listTelemetryHistory,
   exportTelemetryHistory,
 } from "../controllers/telemetryHistoryController.js";
-
 const router = Router();
 
 const deviceIdParamSchema = z.object({
@@ -23,8 +23,6 @@ const deviceIdParamSchema = z.object({
     .trim()
     .min(1, "deviceId is required.")
     .max(64, "deviceId is too long.")
-    // Device ids come from firmware constants, so a strict character set is
-    // safe here and keeps arbitrary input out of the query.
     .regex(/^[A-Za-z0-9_-]+$/, "deviceId contains unsupported characters."),
 });
 
@@ -34,6 +32,26 @@ const renameSchema = z
       .string()
       .trim()
       .max(60, "Display name must not exceed 60 characters."),
+  })
+  .strict();
+
+const singleTankParamSchema = z.object({
+  capacityLiters: z
+    .number({ invalid_type_error: "capacityLiters must be a number." })
+    .finite("capacityLiters must be a finite number.")
+    .gt(0, "capacityLiters must be greater than 0.")
+    .max(1000000, "capacityLiters cannot exceed 1,000,000 Liters."),
+  heightMeters: z
+    .number({ invalid_type_error: "heightMeters must be a number." })
+    .finite("heightMeters must be a finite number.")
+    .gt(0, "heightMeters must be greater than 0.")
+    .max(50, "heightMeters cannot exceed 50 Meters."),
+});
+
+const tankConfigSchema = z
+  .object({
+    upper: singleTankParamSchema,
+    lower: singleTankParamSchema,
   })
   .strict();
 
@@ -49,8 +67,6 @@ const historyQuerySchema = z.object({
   maxLevel: z.coerce.number().min(0).max(100).optional(),
 });
 
-// The CSV export takes the same filters but no pagination — the row cap in the
-// controller bounds it instead.
 const exportQuerySchema = historyQuerySchema.omit({ page: true, limit: true });
 
 // Reading device state and history is available to any signed-in user; only
@@ -85,6 +101,14 @@ router.patch(
   validateParams(deviceIdParamSchema),
   validateRequest(renameSchema),
   renameDevice
+);
+
+router.put(
+  "/:deviceId/tanks",
+  requireAuth,
+  validateParams(deviceIdParamSchema),
+  validateRequest(tankConfigSchema),
+  updateTankConfig
 );
 
 export default router;

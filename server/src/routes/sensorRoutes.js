@@ -26,7 +26,7 @@ const tankDataSchema = z.object({
     .number({ invalid_type_error: "waterHeightCm must be a number." })
     .finite("waterHeightCm must be a finite number.")
     .min(0, "waterHeightCm cannot be negative.")
-    .max(50, "waterHeightCm must not exceed 50 cm."),
+    .max(5000, "waterHeightCm must not exceed 5000 cm."),
   tankStatus: z.enum(["Empty", "Low", "Normal", "High", "Full", "Sensor Error"], {
     errorMap: () => ({
       message:
@@ -53,7 +53,7 @@ const ultrasonicReadingSchema = z.object({
   // Single-tank backward compatibility fields:
   distanceCm: z.number().finite().min(0).max(400).optional(),
   percentage: z.number().finite().min(0).max(100).optional(),
-  waterHeightCm: z.number().finite().min(0).max(50).optional(),
+  waterHeightCm: z.number().finite().min(0).max(5000).optional(),
   tankStatus: z
     .enum(["Empty", "Low", "Normal", "High", "Full", "Sensor Error"])
     .optional(),

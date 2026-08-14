@@ -27,6 +27,7 @@ export default function TankVisual({
   title,
   subtitle,
   tank,
+  tankCapacity,
   pumpStatus,
   isOnline = false,
   isStale = false,
@@ -52,7 +53,7 @@ export default function TankVisual({
 
   const distance = formatNumber(tank?.distanceCm, { decimals: 1, unit: "cm" });
   const waterHeight = formatNumber(tank?.waterHeightCm, { decimals: 1, unit: "cm" });
-  const volume = formatVolume(percentage);
+  const volume = formatVolume(percentage, { capacityLiters: tankCapacity });
 
   const badgeClass =
     STATUS_STYLES[status] ||
@@ -225,6 +226,14 @@ export default function TankVisual({
 function ReadoutCell({ icon: Icon, iconClass, label, formatted, className = "" }) {
   const { t } = useLanguage();
 
+  const textToRender = formatted.hasValue
+    ? formatted.text
+    : formatted?.text && formatted.text !== "—"
+    ? formatted.text === "Not configured"
+      ? t("tankNotConfigured")
+      : formatted.text
+    : t("waitingForData");
+
   return (
     <div className={`min-w-0 ${className}`}>
       <p className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 dark:text-slate-400">
@@ -236,7 +245,7 @@ function ReadoutCell({ icon: Icon, iconClass, label, formatted, className = "" }
           formatted.text
         ) : (
           <span className="text-xs font-bold text-slate-400 dark:text-slate-500">
-            {t("waitingForData")}
+            {textToRender}
           </span>
         )}
       </p>

@@ -11,11 +11,37 @@ import { isDeviceOnline } from "../services/deviceService.js";
  * service, so a device that has never reported still appears (offline, no
  * readings) rather than being invisible until its first POST.
  */
+function serializeTankConfig(tanks) {
+  if (!tanks) return null;
+  const upper = tanks.upper || {};
+  const lower = tanks.lower || {};
+  const upperCap = upper.capacityLiters ?? null;
+  const upperHeightCm = upper.heightCm ?? null;
+  const lowerCap = lower.capacityLiters ?? null;
+  const lowerHeightCm = lower.heightCm ?? null;
+
+  const isConfigured = Boolean(
+    upperCap !== null && upperHeightCm !== null && lowerCap !== null && lowerHeightCm !== null
+  );
+
+  return {
+    upper: {
+      capacityLiters: upperCap,
+      heightCm: upperHeightCm,
+      heightMeters: upperHeightCm !== null ? Number((upperHeightCm / 100).toFixed(2)) : null,
+    },
+    lower: {
+      capacityLiters: lowerCap,
+      heightCm: lowerHeightCm,
+      heightMeters: lowerHeightCm !== null ? Number((lowerHeightCm / 100).toFixed(2)) : null,
+    },
+    configuredAt: tanks.configuredAt ?? null,
+    isConfigured,
+  };
+}
+
 function serializeDevice(device, latestReading, control) {
   const online = isDeviceOnline(device.lastSeenAt);
-  // The hot telemetry copy only holds the most recent device. For any other
-  // device the live fields are genuinely unknown, and are reported as null
-  // rather than borrowed from a different device's reading.
   const isLatestDevice = latestReading?.deviceId === device.deviceId;
   const reading = isLatestDevice ? latestReading : null;
 
@@ -23,11 +49,11 @@ function serializeDevice(device, latestReading, control) {
     deviceId: device.deviceId,
     displayName: device.displayName || device.deviceId,
     hasCustomName: Boolean(device.displayName),
+    owner: device.owner ?? null,
+    tanks: serializeTankConfig(device.tanks),
     isOnline: online,
     lastSeenAt: device.lastSeenAt ?? null,
     firstSeenAt: device.firstSeenAt ?? null,
-    // The current ultrasonic firmware does not report a version. Null here is
-    // the honest answer and the UI renders "Not reported".
     firmwareVersion: device.firmwareVersion ?? null,
     totalReadings: device.totalReadings ?? 0,
     upperTank: reading?.upperTank ?? null,
@@ -72,8 +98,6 @@ export async function getDevice(req, res, next) {
     const latestReading = getLatestReading();
     const control = getDeviceControlState();
 
-    // The most recent stored reading for *this* device, which is not always the
-    // in-memory one when more than one device reports.
     const lastStored = await UltrasonicReading.findOne({
       deviceId: device.deviceId,
     })
@@ -102,7 +126,6 @@ export function serializeStoredReading(reading) {
     systemEnabled: reading.systemEnabled ?? null,
     sensorStatus: reading.sensorStatus ?? null,
     failedSensor: reading.failedSensor ?? null,
-    // Water flow state stays null when the firmware did not report it.
     waterFlowDetected: reading.waterFlowDetected ?? null,
     receivedAt: reading.receivedAt,
   };
@@ -135,6 +158,94 @@ export async function renameDevice(req, res, next) {
     res.status(200).json({
       success: true,
       message: "Device name updated.",
+      device: serializeDevice(device.toObject(), getLatestReading(), getDeviceControlState()),
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function updateTankConfig(req, res, next) {
+  try {
+    // STRICT RULE: Admins cannot modify tank parameters!
+    if (req.user?.role === "admin") {
+      const error = new Error("Administrators are not permitted to modify device tank parameters.");
+      error.statusCode = 403;
+      return next(error);
+    }
+
+    const device = await Device.findOne({ deviceId: req.params.deviceId });
+    if (!device) {
+      const error = new Error("Device not found.");
+      error.statusCode = 404;
+      return next(error);
+    }
+
+    const previousTanks = serializeTankConfig(device.tanks);
+
+    const { upper, lower } = req.body;
+
+    const validateTank = (tank, name) => {
+      if (!tank || typeof tank !== "object") {
+        throw new Error(`${name} tank parameters are required.`);
+      }
+      const capacityLiters = Number(tank.capacityLiters);
+      const heightMeters = Number(tank.heightMeters);
+
+      if (!Number.isFinite(capacityLiters) || capacityLiters <= 0) {
+        throw new Error(`${name} tank capacity must be a positive number in Liters.`);
+      }
+      if (!Number.isFinite(heightMeters) || heightMeters <= 0) {
+        throw new Error(`${name} tank usable height must be a positive number in Meters.`);
+      }
+      if (capacityLiters > 1_000_000) {
+        throw new Error(`${name} tank capacity cannot exceed 1,000,000 Liters.`);
+      }
+      if (heightMeters > 50) {
+        throw new Error(`${name} tank usable height cannot exceed 50 Meters.`);
+      }
+
+      return {
+        capacityLiters,
+        heightCm: Math.round(heightMeters * 100),
+      };
+    };
+
+    let upperConfig, lowerConfig;
+    try {
+      upperConfig = validateTank(upper, "Upper");
+      lowerConfig = validateTank(lower, "Lower");
+    } catch (valErr) {
+      valErr.statusCode = 400;
+      return next(valErr);
+    }
+
+    device.tanks = {
+      upper: upperConfig,
+      lower: lowerConfig,
+      configuredAt: new Date(),
+      configuredBy: req.user._id,
+    };
+
+    await device.save();
+
+    const nextTanks = serializeTankConfig(device.tanks);
+
+    await recordAudit({
+      req,
+      action: AUDIT_ACTIONS.TANK_CONFIG_UPDATED,
+      targetType: "device",
+      targetId: device.deviceId,
+      targetLabel: device.displayName || device.deviceId,
+      metadata: {
+        previous: previousTanks,
+        next: nextTanks,
+      },
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Tank configuration saved. It will sync when the device reconnects.",
       device: serializeDevice(device.toObject(), getLatestReading(), getDeviceControlState()),
     });
   } catch (error) {

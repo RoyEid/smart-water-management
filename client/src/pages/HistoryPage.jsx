@@ -279,9 +279,19 @@ export default function HistoryPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50 dark:divide-slate-800/60">
-                  {readings.map((entry) => (
-                    <HistoryRow key={entry.id} entry={entry} t={t} language={language} />
-                  ))}
+                  {readings.map((entry) => {
+                    const targetDevId = entry.deviceId || appliedFilters.deviceId || devices[0]?.deviceId;
+                    const matchedDev = devices.find((d) => d.deviceId === targetDevId);
+                    return (
+                      <HistoryRow
+                        key={entry.id}
+                        entry={entry}
+                        device={matchedDev}
+                        t={t}
+                        language={language}
+                      />
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -300,10 +310,12 @@ export default function HistoryPage() {
   );
 }
 
-function HistoryRow({ entry, t, language }) {
+function HistoryRow({ entry, device, t, language }) {
   const timestamp = formatTimestamp(entry.receivedAt, { locale: language });
   const upperStatusKey = tankStatusKey(entry.upperTank?.tankStatus);
   const lowerStatusKey = tankStatusKey(entry.lowerTank?.tankStatus);
+  const upperCap = device?.tanks?.upper?.capacityLiters;
+  const lowerCap = device?.tanks?.lower?.capacityLiters;
 
   return (
     <tr className="text-xs font-semibold text-slate-700 transition hover:bg-slate-50/70 dark:text-slate-300 dark:hover:bg-slate-800/40">
@@ -318,7 +330,10 @@ function HistoryRow({ entry, t, language }) {
         />
       </Td>
       <Td>
-        <Cell formatted={formatVolume(entry.upperTank?.percentage)} t={t} />
+        <Cell
+          formatted={formatVolume(entry.upperTank?.percentage, { capacityLiters: upperCap })}
+          t={t}
+        />
       </Td>
       <Td>
         <Cell
@@ -328,7 +343,10 @@ function HistoryRow({ entry, t, language }) {
         />
       </Td>
       <Td>
-        <Cell formatted={formatVolume(entry.lowerTank?.percentage)} t={t} />
+        <Cell
+          formatted={formatVolume(entry.lowerTank?.percentage, { capacityLiters: lowerCap })}
+          t={t}
+        />
       </Td>
       <Td>
         {entry.pumpStatus ? (

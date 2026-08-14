@@ -8,10 +8,6 @@
  * legitimate readings — survive intact.
  */
 
-// The physical upper-tank capacity, matching UPPER_TANK_CAPACITY_LITRES in the
-// firmware and the backend. Volume is derived from it, never measured directly.
-export const TANK_CAPACITY_LITRES = 8.0;
-
 // Thresholds mirrored from the firmware so the UI explains the rules the
 // hardware actually applies. Read-only: the firmware owns these values.
 export const PUMP_START_UPPER_LEVEL = 20.0;
@@ -46,22 +42,37 @@ export function formatPercentage(value, { decimals = 1, placeholder } = {}) {
 }
 
 /**
- * Volume is derived from the level percentage and the fixed 8 L capacity — the
- * hardware has no volume sensor. A missing level therefore yields a missing
- * volume rather than 0 L.
+ * Volume is derived from the level percentage and user-configured tank capacity.
+ * If capacity or percentage is missing or <= 0, returns null.
  */
-export function litresFromPercentage(percentage) {
-  if (!hasValue(percentage)) return null;
+export function litresFromPercentage(percentage, capacityLiters) {
+  if (!hasValue(percentage) || !hasValue(capacityLiters) || capacityLiters <= 0) return null;
   const clamped = Math.min(Math.max(percentage, 0), 100);
-  return (clamped / 100) * TANK_CAPACITY_LITRES;
+  return (clamped / 100) * capacityLiters;
 }
 
-export function formatVolume(percentage, { decimals = 2, placeholder } = {}) {
-  const litres = litresFromPercentage(percentage);
+export function formatVolume(percentage, { capacityLiters, decimals, placeholder } = {}) {
+  const litres = litresFromPercentage(percentage, capacityLiters);
   if (litres === null) {
-    return { hasValue: false, value: null, text: placeholder ?? "—" };
+    const unconfigured = hasValue(percentage) && (!hasValue(capacityLiters) || capacityLiters <= 0);
+    return {
+      hasValue: false,
+      value: null,
+      text: placeholder ?? (unconfigured ? "Not configured" : "—"),
+    };
   }
-  return { hasValue: true, value: litres, text: `${litres.toFixed(decimals)} L` };
+
+  if (decimals !== undefined) {
+    return { hasValue: true, value: litres, text: `${litres.toFixed(decimals)} L` };
+  }
+
+  const formattedLitres = Math.round(litres).toLocaleString();
+  const formattedCapacity = Math.round(capacityLiters).toLocaleString();
+  return {
+    hasValue: true,
+    value: litres,
+    text: `${formattedLitres} L / ${formattedCapacity} L`,
+  };
 }
 
 export function formatTimestamp(value, { placeholder = "—", locale } = {}) {

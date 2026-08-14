@@ -459,7 +459,6 @@ export async function getSystemConfig(req, res, next) {
       // confirm the UI and the firmware agree. Changing them here does nothing:
       // the firmware owns them, this is a read-only mirror.
       hardware: {
-        upperTankCapacityLitres: 8.0,
         pumpStartUpperLevel: 20.0,
         pumpStopUpperLevel: 90.0,
         pumpStartLowerMinLevel: 20.0,

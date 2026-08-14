@@ -23,6 +23,7 @@ export default function DashboardPage() {
   const {
     reading,
     readings,
+    tanks,
     isOnline,
     isStale,
     isLoading,
@@ -37,6 +38,9 @@ export default function DashboardPage() {
 
   const upperTank = reading?.upperTank ?? null;
   const lowerTank = reading?.lowerTank ?? null;
+  const upperCapacity = tanks?.upper?.capacityLiters ?? null;
+  const lowerCapacity = tanks?.lower?.capacityLiters ?? null;
+
   const lastUpdatedText = formatTime(lastUpdatedAt, { locale: language }).hasValue
     ? formatTime(lastUpdatedAt, { locale: language }).text
     : t("waitingForData");
@@ -72,6 +76,7 @@ export default function DashboardPage() {
               title={t("upperTank")}
               subtitle={t("destinationReservoir")}
               tank={upperTank}
+              tankCapacity={upperCapacity}
               pumpStatus={reading?.pumpStatus}
               isOnline={isOnline}
               isStale={isStale}
@@ -83,6 +88,7 @@ export default function DashboardPage() {
               title={t("lowerTank")}
               subtitle={t("sourceReservoir")}
               tank={lowerTank}
+              tankCapacity={lowerCapacity}
               pumpStatus={reading?.pumpStatus}
               isOnline={isOnline}
               isStale={isStale}
@@ -145,15 +151,23 @@ export default function DashboardPage() {
         <MetricCard
           icon={FlaskConical}
           label={t("upperTankVolume")}
-          formatted={formatVolume(upperTank?.percentage)}
-          detail={t("capacityDetail")}
+          formatted={formatVolume(upperTank?.percentage, { capacityLiters: upperCapacity })}
+          detail={
+            upperCapacity
+              ? `${t("destinationReservoir")} (${Number(upperCapacity).toLocaleString()} L)`
+              : t("destinationReservoir")
+          }
           accent="emerald"
         />
         <MetricCard
           icon={FlaskConical}
           label={t("lowerTankVolume")}
-          formatted={formatVolume(lowerTank?.percentage)}
-          detail={t("capacityDetail")}
+          formatted={formatVolume(lowerTank?.percentage, { capacityLiters: lowerCapacity })}
+          detail={
+            lowerCapacity
+              ? `${t("sourceReservoir")} (${Number(lowerCapacity).toLocaleString()} L)`
+              : t("sourceReservoir")
+          }
           accent="violet"
         />
       </section>

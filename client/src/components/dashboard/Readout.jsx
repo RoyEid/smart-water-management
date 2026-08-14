@@ -25,12 +25,18 @@ export default function Readout({
   if (!formatted?.hasValue) {
     const placeholderKey =
       placeholderKind === "unavailable" ? "notAvailable" : "waitingForData";
+    const textToRender =
+      formatted?.text && formatted.text !== "—"
+        ? formatted.text === "Not configured"
+          ? t("tankNotConfigured")
+          : formatted.text
+        : t(placeholderKey);
 
     return (
       <span
         className={`block truncate text-xs font-bold text-slate-400 dark:text-slate-500 ${className}`}
       >
-        {t(placeholderKey)}
+        {textToRender}
       </span>
     );
   }

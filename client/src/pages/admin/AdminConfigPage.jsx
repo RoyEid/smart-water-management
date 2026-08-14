@@ -56,11 +56,6 @@ export default function AdminConfigPage() {
       <Card icon={Cpu} title={t("hardwareConstants")} description={t("hardwareConstantsDesc")}>
         <dl className="space-y-3">
           <TextRow
-            label={t("tankCapacity")}
-            value={`${hardware.upperTankCapacityLitres.toFixed(1)} L`}
-            mono
-          />
-          <TextRow
             label={t("pumpStartUpper")}
             value={`≤ ${hardware.pumpStartUpperLevel}%`}
             mono

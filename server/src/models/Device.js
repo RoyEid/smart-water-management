@@ -43,6 +43,26 @@ const deviceSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // The device owner (regular user). Admin users cannot be owners or edit config.
+    owner: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+    },
+    // Physical tank configuration (configured by device owner)
+    tanks: {
+      upper: {
+        capacityLiters: { type: Number, default: null },
+        heightCm: { type: Number, default: null },
+      },
+      lower: {
+        capacityLiters: { type: Number, default: null },
+        heightCm: { type: Number, default: null },
+      },
+      configuredAt: { type: Date, default: null },
+      configuredBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    },
   },
   { timestamps: true, versionKey: false }
 );

@@ -1,18 +1,24 @@
 import {
   getDeviceControlState,
+  getDeviceControlStateAsync,
   setDeviceControlState,
 } from "../services/deviceControlService.js";
 import { emitDeviceControlChanged } from "../realtime/socketServer.js";
 import { recordAudit } from "../services/auditService.js";
 import { AUDIT_ACTIONS } from "../models/AuditLog.js";
 
-export function getDeviceControl(req, res) {
-  const control = getDeviceControlState();
-  res.status(200).json({
-    success: true,
-    control,
-    ...control,
-  });
+export async function getDeviceControl(req, res, next) {
+  try {
+    const deviceId = req.query?.deviceId || req.body?.deviceId || "tank-01";
+    const control = await getDeviceControlStateAsync(deviceId);
+    res.status(200).json({
+      success: true,
+      control,
+      ...control,
+    });
+  } catch (error) {
+    next(error);
+  }
 }
 
 export function updateDeviceControl(req, res) {

@@ -15,6 +15,11 @@ export async function renameDevice(deviceId, displayName) {
   return data;
 }
 
+export async function updateTankConfig(deviceId, tankConfig) {
+  const { data } = await api.put(`/devices/${deviceId}/tanks`, tankConfig);
+  return data;
+}
+
 export async function fetchTelemetryHistory(params) {
   const { data } = await api.get("/devices/telemetry/history", { params });
   return data;
