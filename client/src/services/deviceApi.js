@@ -25,6 +25,11 @@ export async function fetchTelemetryHistory(params) {
   return data;
 }
 
+export async function fetchAnalyticsOverview(params) {
+  const { data } = await api.get("/devices/telemetry/analytics", { params });
+  return data;
+}
+
 /**
  * Fetches the CSV as a blob so the caller can trigger a download.
  *

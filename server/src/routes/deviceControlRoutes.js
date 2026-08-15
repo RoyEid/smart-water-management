@@ -20,6 +20,7 @@ const deviceControlSchema = z
     manualPumpState: z.enum(["ON", "OFF"], {
       errorMap: () => ({ message: "manualPumpState must be ON or OFF." }),
     }).optional(),
+    allowPumpOnMoteur: z.boolean({ invalid_type_error: "allowPumpOnMoteur must be a boolean." }).optional(),
   })
   .strict();
 

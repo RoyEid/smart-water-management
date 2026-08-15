@@ -1,6 +1,11 @@
 import UltrasonicReading from "../models/UltrasonicReading.js";
 import { touchDevice } from "./deviceService.js";
 import { syncAlerts } from "./alertService.js";
+import {
+  getDeviceControlState,
+  setDeviceControlState,
+} from "./deviceControlService.js";
+import { emitDeviceControlChanged } from "../realtime/socketServer.js";
 
 const ONLINE_WINDOW_MS = 10_000;
 
@@ -34,6 +39,9 @@ function normalizePayload(payload) {
     failedSensor,
     // YF-S201 binary flow telemetry
     waterFlowDetected,
+    // Electricity source telemetry (DAWLE / MOTEUR)
+    powerSource,
+    allowPumpOnMoteur,
     // Single-tank backward compatibility fields:
     distanceCm,
     percentage,
@@ -69,8 +77,21 @@ function normalizePayload(payload) {
     sensorStatus: sensorStatus ? String(sensorStatus) : null,
     failedSensor: failedSensor ? String(failedSensor) : null,
     waterFlowDetected: normalizeWaterFlowDetected(waterFlowDetected),
+    powerSource: normalizePowerSource(powerSource),
+    allowPumpOnMoteur: Boolean(allowPumpOnMoteur),
     receivedAt,
   };
+}
+
+/**
+ * Normalizes electricity source: DAWLE or MOTEUR.
+ * Safest failure behavior: missing or unknown source defaults to MOTEUR.
+ */
+export function normalizePowerSource(source) {
+  if (typeof source === "string" && source.trim().toUpperCase() === "DAWLE") {
+    return "DAWLE";
+  }
+  return "MOTEUR";
 }
 
 /**
@@ -85,7 +106,17 @@ function normalizeWaterFlowDetected(value) {
 }
 
 export function saveLatestReading(payload) {
+  const previousPowerSource = latestReading?.powerSource ?? null;
   latestReading = normalizePayload(payload);
+
+  // Transition safety: when DAWLE -> MOTEUR transition occurs, reset any Moteur permission
+  if (previousPowerSource === "DAWLE" && latestReading.powerSource === "MOTEUR") {
+    const currentControl = getDeviceControlState();
+    if (currentControl.allowPumpOnMoteur) {
+      const { state } = setDeviceControlState({ allowPumpOnMoteur: false });
+      emitDeviceControlChanged(state);
+    }
+  }
 
   // Persist without blocking the device response. A MongoDB problem must
   // degrade durability only — it must never turn a good reading into an error
@@ -141,6 +172,8 @@ export async function hydrateLatestReading() {
       sensorStatus: stored.sensorStatus ?? null,
       failedSensor: stored.failedSensor ?? null,
       waterFlowDetected: normalizeWaterFlowDetected(stored.waterFlowDetected),
+      powerSource: normalizePowerSource(stored.powerSource),
+      allowPumpOnMoteur: false,
       receivedAt: new Date(stored.receivedAt),
     };
 
@@ -169,6 +202,8 @@ function serializeReading(reading) {
     sensorStatus: reading.sensorStatus,
     failedSensor: reading.failedSensor,
     waterFlowDetected: reading.waterFlowDetected ?? null,
+    powerSource: reading.powerSource ?? "MOTEUR",
+    allowPumpOnMoteur: Boolean(reading.allowPumpOnMoteur),
     receivedAt: timestamp,
     timestamp,
     // Backward compatibility for single-tank clients

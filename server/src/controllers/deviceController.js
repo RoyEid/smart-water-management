@@ -63,6 +63,8 @@ function serializeDevice(device, latestReading, control) {
     pumpStatus: reading?.pumpStatus ?? null,
     pumpMode: isLatestDevice ? control.pumpMode : null,
     systemEnabled: isLatestDevice ? control.systemEnabled : null,
+    allowPumpOnMoteur: isLatestDevice ? control.allowPumpOnMoteur : null,
+    powerSource: reading?.powerSource ?? null,
     latestTelemetryAt: reading?.receivedAt ?? null,
     waterFlowDetected: reading?.waterFlowDetected ?? null,
   };
@@ -127,6 +129,8 @@ export function serializeStoredReading(reading) {
     sensorStatus: reading.sensorStatus ?? null,
     failedSensor: reading.failedSensor ?? null,
     waterFlowDetected: reading.waterFlowDetected ?? null,
+    powerSource: reading.powerSource ?? "MOTEUR",
+    allowPumpOnMoteur: Boolean(reading.allowPumpOnMoteur),
     receivedAt: reading.receivedAt,
   };
 }

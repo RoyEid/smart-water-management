@@ -38,6 +38,10 @@ const ultrasonicReadingSchema = new mongoose.Schema(
     // YF-S201 binary flow presence detection (true = flow, false = no flow, null = missing/waiting).
     waterFlowDetected: { type: Boolean, default: null },
 
+    // Electricity source detection (DAWLE = government electricity, MOTEUR = generator / no Dawle signal).
+    powerSource: { type: String, enum: ["DAWLE", "MOTEUR"], default: "MOTEUR" },
+    allowPumpOnMoteur: { type: Boolean, default: false },
+
     receivedAt: { type: Date, default: Date.now, index: true },
   },
   { timestamps: true, versionKey: false }

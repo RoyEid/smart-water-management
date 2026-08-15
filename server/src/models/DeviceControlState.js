@@ -22,6 +22,7 @@ const deviceControlStateSchema = new mongoose.Schema(
     systemEnabled: { type: Boolean, default: true },
     pumpMode: { type: String, enum: ["AUTO", "MANUAL"], default: "AUTO" },
     manualPumpState: { type: String, enum: ["ON", "OFF"], default: "OFF" },
+    allowPumpOnMoteur: { type: Boolean, default: false },
     updatedAt: { type: Date, default: Date.now },
   },
   { versionKey: false }

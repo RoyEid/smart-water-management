@@ -118,11 +118,6 @@ export default function Sidebar({
 
         <div className="scrollbar-thin flex-1 space-y-6 overflow-y-auto px-3 py-4">
           <div>
-            {!isCollapsed && (
-              <p className="px-3 pb-2 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                {t("activeOperations")}
-              </p>
-            )}
             <nav className="space-y-1">
               {navItems.map((item) => {
                 const Icon = item.icon;
@@ -170,42 +165,40 @@ export default function Sidebar({
             </nav>
           </div>
 
-          <div>
-            {!isCollapsed && (
-              <p className="px-3 pb-2 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                {t("futureModules")}
-              </p>
-            )}
-            {/* Not links and not buttons: these modules do not exist yet, so
-                nothing here is interactive. A control that looked usable but
-                led to an empty screen would be worse than one that plainly
-                announces it is not built. */}
-            <ul className="space-y-1">
-              {FUTURE_NAV_ITEMS.map((item) => {
-                const Icon = item.icon;
-                const label = t(item.labelKey);
-                return (
-                  <li
-                    key={item.id}
-                    title={isCollapsed ? `${label} — ${t("comingSoon")}` : undefined}
-                    className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs font-bold text-slate-400 dark:text-slate-500 ${
-                      isCollapsed ? "justify-center px-0" : ""
-                    }`}
-                  >
-                    <div
-                      className={`flex min-w-0 items-center gap-3 ${
-                        isCollapsed ? "justify-center" : ""
+          {FUTURE_NAV_ITEMS.length > 0 && (
+            <div>
+              {!isCollapsed && (
+                <p className="px-3 pb-2 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                  {t("futureModules")}
+                </p>
+              )}
+              <ul className="space-y-1">
+                {FUTURE_NAV_ITEMS.map((item) => {
+                  const Icon = item.icon;
+                  const label = t(item.labelKey);
+                  return (
+                    <li
+                      key={item.id}
+                      title={isCollapsed ? `${label} — ${t("comingSoon")}` : undefined}
+                      className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs font-bold text-slate-400 dark:text-slate-500 ${
+                        isCollapsed ? "justify-center px-0" : ""
                       }`}
                     >
-                      <Icon size={17} className="shrink-0" aria-hidden="true" />
-                      {!isCollapsed && <span className="truncate">{label}</span>}
-                    </div>
-                    <ComingSoonBadge collapsed={isCollapsed} label={t("comingSoon")} />
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
+                      <div
+                        className={`flex min-w-0 items-center gap-3 ${
+                          isCollapsed ? "justify-center" : ""
+                        }`}
+                      >
+                        <Icon size={17} className="shrink-0" aria-hidden="true" />
+                        {!isCollapsed && <span className="truncate">{label}</span>}
+                      </div>
+                      <ComingSoonBadge collapsed={isCollapsed} label={t("comingSoon")} />
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
         </div>
 
         <div className="hidden border-t border-slate-200/80 p-3 lg:block dark:border-slate-800/80">

@@ -20,6 +20,7 @@ function reading(overrides = {}) {
     upperTank: { percentage: 50, tankStatus: "Normal" },
     lowerTank: { percentage: 60, tankStatus: "Normal" },
     pumpStatus: "OFF",
+    powerSource: "DAWLE",
     ...overrides,
   };
 }
@@ -166,3 +167,97 @@ test("interlocks report pass and fail correctly on real values", () => {
   assert.equal(checks.find((check) => check.id === "deviceOnline").state, "pass");
   assert.equal(checks.find((check) => check.id === "systemEnabled").state, "pass");
 });
+
+test("DAWLE power source permits normal AUTO pump logic", () => {
+  const result = derivePumpReasoning({
+    reading: reading({ powerSource: "DAWLE" }),
+    controlState: enabledAuto,
+    isOnline: true,
+  });
+
+  assert.equal(result.key, "reasonAutoIdle");
+  assert.equal(result.blocked, false);
+});
+
+test("MOTEUR power source without permission blocks pump reasoning", () => {
+  const result = derivePumpReasoning({
+    reading: reading({ powerSource: "MOTEUR", allowPumpOnMoteur: false }),
+    controlState: { ...enabledAuto, allowPumpOnMoteur: false },
+    isOnline: true,
+  });
+
+  assert.equal(result.key, "reasonMoteurBlocked");
+  assert.equal(result.blocked, true);
+  assert.equal(result.tone, "warning");
+});
+
+test("MOTEUR power source with explicit permission allows normal pump reasoning", () => {
+  const result = derivePumpReasoning({
+    reading: reading({ powerSource: "MOTEUR", allowPumpOnMoteur: true }),
+    controlState: { ...enabledAuto, allowPumpOnMoteur: true },
+    isOnline: true,
+  });
+
+  assert.equal(result.key, "reasonAutoIdle");
+  assert.equal(result.blocked, false);
+});
+
+test("MOTEUR blocks manual ON when allowPumpOnMoteur is false", () => {
+  const result = canCommandManualOn({
+    reading: reading({ powerSource: "MOTEUR", allowPumpOnMoteur: false }),
+    controlState: { systemEnabled: true, pumpMode: "MANUAL", allowPumpOnMoteur: false },
+    isOnline: true,
+  });
+
+  assert.equal(result.allowed, false);
+  assert.equal(result.reasonKey, "blockMoteurNoPermission");
+});
+
+test("MOTEUR allows manual ON when allowPumpOnMoteur is true and all other checks pass", () => {
+  const result = canCommandManualOn({
+    reading: reading({ powerSource: "MOTEUR", allowPumpOnMoteur: true }),
+    controlState: { systemEnabled: true, pumpMode: "MANUAL", allowPumpOnMoteur: true },
+    isOnline: true,
+  });
+
+  assert.equal(result.allowed, true);
+});
+
+test("dry-run outranks MOTEUR permission in reasoning", () => {
+  const result = derivePumpReasoning({
+    reading: reading({
+      lowerTank: { percentage: 5, tankStatus: "Low" },
+      powerSource: "MOTEUR",
+      allowPumpOnMoteur: true,
+    }),
+    controlState: { ...enabledAuto, allowPumpOnMoteur: true },
+    isOnline: true,
+  });
+
+  assert.equal(result.key, "reasonDryRun");
+  assert.equal(result.blocked, true);
+});
+
+test("powerSource safety check correctly evaluates DAWLE, MOTEUR permitted, and MOTEUR blocked", () => {
+  const checksDawle = deriveSafetyChecks({
+    reading: reading({ powerSource: "DAWLE" }),
+    controlState: enabledAuto,
+    isOnline: true,
+  });
+  assert.equal(checksDawle.find((c) => c.id === "powerSource").state, "pass");
+
+  const checksMoteurBlocked = deriveSafetyChecks({
+    reading: reading({ powerSource: "MOTEUR", allowPumpOnMoteur: false }),
+    controlState: { ...enabledAuto, allowPumpOnMoteur: false },
+    isOnline: true,
+  });
+  assert.equal(checksMoteurBlocked.find((c) => c.id === "powerSource").state, "fail");
+
+  const checksMoteurAllowed = deriveSafetyChecks({
+    reading: reading({ powerSource: "MOTEUR", allowPumpOnMoteur: true }),
+    controlState: { ...enabledAuto, allowPumpOnMoteur: true },
+    isOnline: true,
+  });
+  assert.equal(checksMoteurAllowed.find((c) => c.id === "powerSource").state, "pass");
+});
+

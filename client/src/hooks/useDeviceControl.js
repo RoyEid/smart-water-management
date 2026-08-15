@@ -22,6 +22,7 @@ export default function useDeviceControl() {
     systemEnabled: undefined,
     pumpMode: null,
     manualPumpState: null,
+    allowPumpOnMoteur: false,
     updatedAt: null,
   });
   const [loading, setLoading] = useState(true);
@@ -43,6 +44,7 @@ export default function useDeviceControl() {
       systemEnabled: control.systemEnabled ?? undefined,
       pumpMode: control.pumpMode ?? null,
       manualPumpState: control.manualPumpState ?? null,
+      allowPumpOnMoteur: Boolean(control.allowPumpOnMoteur),
       updatedAt: control.updatedAt ?? null,
     });
     setError("");
@@ -171,6 +173,15 @@ export default function useDeviceControl() {
     [sendUpdate]
   );
 
+  const setAllowPumpOnMoteur = useCallback(
+    (allowed) =>
+      sendUpdate(
+        { allowPumpOnMoteur: Boolean(allowed) },
+        allowed ? "allowPumpOnMoteur" : "disallowPumpOnMoteur"
+      ),
+    [sendUpdate]
+  );
+
   return {
     controlState,
     loading,
@@ -181,5 +192,6 @@ export default function useDeviceControl() {
     toggleSystemEnabled,
     setPumpMode,
     setManualPumpState,
+    setAllowPumpOnMoteur,
   };
 }

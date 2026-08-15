@@ -63,9 +63,9 @@ app.use((req, res, next) => {
   next();
 });
 
-// 5. Parse request bodies with size limits
-app.use(express.json({ limit: "10kb" }));
-app.use(express.urlencoded({ extended: true, limit: "10kb" }));
+// 5. Parse request bodies with size limits (2MB allows resized avatar data URLs up to MAX_AVATAR_CHARS)
+app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 
 // 6. Cookie Parser
 app.use(cookieParser());

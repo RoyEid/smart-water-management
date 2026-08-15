@@ -52,6 +52,7 @@ const deviceControlSchema = z
     systemEnabled: z.boolean().optional(),
     pumpMode: z.enum(["AUTO", "MANUAL"]).optional(),
     manualPumpState: z.enum(["ON", "OFF"]).optional(),
+    allowPumpOnMoteur: z.boolean().optional(),
   })
   .strict();
 
@@ -61,6 +62,8 @@ test("the control payload accepts exactly the documented values", () => {
   assert.doesNotThrow(() => deviceControlSchema.parse({ pumpMode: "MANUAL" }));
   assert.doesNotThrow(() => deviceControlSchema.parse({ manualPumpState: "ON" }));
   assert.doesNotThrow(() => deviceControlSchema.parse({ manualPumpState: "OFF" }));
+  assert.doesNotThrow(() => deviceControlSchema.parse({ allowPumpOnMoteur: true }));
+  assert.doesNotThrow(() => deviceControlSchema.parse({ allowPumpOnMoteur: false }));
 });
 
 test("the control payload rejects unknown fields and wrong casing", () => {
@@ -69,4 +72,5 @@ test("the control payload rejects unknown fields and wrong casing", () => {
   assert.throws(() => deviceControlSchema.parse({ pumpMode: "auto" }));
   assert.throws(() => deviceControlSchema.parse({ manualPumpState: "on" }));
   assert.throws(() => deviceControlSchema.parse({ systemEnabled: "true" }));
+  assert.throws(() => deviceControlSchema.parse({ allowPumpOnMoteur: "yes" }));
 });

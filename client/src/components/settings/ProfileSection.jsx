@@ -112,7 +112,14 @@ export default function ProfileSection({ user, onUserUpdate }) {
     }
   }
 
-  const localeCode = language === "ar" ? "ar-EG" : language === "fr" ? "fr-FR" : "en-US";
+  const localeCode =
+    language === "ar"
+      ? "ar-EG"
+      : language === "fr"
+      ? "fr-FR"
+      : language === "zh"
+      ? "zh-CN"
+      : "en-US";
   const createdAt = user?.createdAt
     ? new Date(user.createdAt).toLocaleDateString(localeCode, {
         year: "numeric",
@@ -146,7 +153,7 @@ export default function ProfileSection({ user, onUserUpdate }) {
             ref={fileInputRef}
             id="settings-avatar"
             type="file"
-            accept="image/png,image/jpeg,image/webp"
+            accept="image/*"
             onChange={handleAvatarChange}
             className="sr-only"
           />

@@ -33,14 +33,16 @@ export default function DeviceControlPanel({
   toggleSystemEnabled,
   setPumpMode,
   setManualPumpState,
+  setAllowPumpOnMoteur,
 }) {
   const { t, language } = useLanguage();
   const toast = useToast();
   const [pendingConfirm, setPendingConfirm] = useState(null);
 
-  const { systemEnabled, pumpMode, manualPumpState } = controlState;
+  const { systemEnabled, pumpMode, manualPumpState, allowPumpOnMoteur } = controlState;
   const knownSystemState = systemEnabled !== undefined;
   const isManual = pumpMode === "MANUAL";
+  const isMoteur = isOnline && reading?.powerSource === "MOTEUR";
 
   const manualOnCheck = canCommandManualOn({ reading, controlState, isOnline });
 
@@ -227,6 +229,57 @@ export default function DeviceControlPanel({
           </p>
         )}
       </section>
+
+      {/* Generator Pump Permission (visible when on Moteur) */}
+      {isMoteur && (
+        <section className="mt-6 border-t border-slate-100 pt-5 dark:border-slate-800">
+          <h4 className="text-xs font-extrabold text-slate-700 dark:text-slate-300">
+            {t("moteurPumpPermission")}
+          </h4>
+          <p className="mt-1 text-[11px] font-medium leading-relaxed text-slate-500 dark:text-slate-400">
+            {t("moteurPumpPermissionDesc")}
+          </p>
+
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <ControlButton
+              active={allowPumpOnMoteur === true}
+              disabled={controlsBusy}
+              busy={updating}
+              onClick={() =>
+                confirmAndRun({
+                  titleKey: "confirmAllowMoteurTitle",
+                  descriptionKey: "confirmAllowMoteurDesc",
+                  confirmKey: "allowPumpOnMoteur",
+                  destructive: false,
+                  command: () => setAllowPumpOnMoteur(true),
+                  successKey: "commandAllowMoteur",
+                })
+              }
+              tone="emerald"
+              icon={Zap}
+              label={t("allowPumpOnMoteur")}
+            />
+            <ControlButton
+              active={allowPumpOnMoteur === false}
+              disabled={controlsBusy}
+              busy={updating}
+              onClick={() =>
+                confirmAndRun({
+                  titleKey: "confirmDisallowMoteurTitle",
+                  descriptionKey: "confirmDisallowMoteurDesc",
+                  confirmKey: "disallowPumpOnMoteur",
+                  destructive: true,
+                  command: () => setAllowPumpOnMoteur(false),
+                  successKey: "commandDisallowMoteur",
+                })
+              }
+              tone="rose"
+              icon={Power}
+              label={t("disallowPumpOnMoteur")}
+            />
+          </div>
+        </section>
+      )}
 
       {/* Last command result */}
       {lastCommand && (

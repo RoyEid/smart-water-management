@@ -21,7 +21,12 @@ export async function fileToAvatarDataUrl(file) {
     throw new Error("No file selected.");
   }
 
-  if (!ACCEPTED_TYPES.includes(file.type)) {
+  const mimeType = (file.type || "").toLowerCase();
+  const fileName = (file.name || "").toLowerCase();
+  const isImageExtension = /\.(png|jpe?g|webp|jfif)$/i.test(fileName);
+  const isImageMime = ACCEPTED_TYPES.includes(mimeType) || mimeType.startsWith("image/");
+
+  if (!isImageMime && !isImageExtension) {
     throw new Error("Please choose a PNG, JPEG or WebP image.");
   }
 

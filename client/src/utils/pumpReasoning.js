@@ -26,6 +26,8 @@ export function derivePumpReasoning({ reading, controlState, isOnline, tanks, de
   const pumpStatus = reading?.pumpStatus ?? null;
   const systemEnabled = controlState?.systemEnabled;
   const pumpMode = controlState?.pumpMode ?? reading?.pumpMode ?? null;
+  const powerSource = reading?.powerSource ?? "MOTEUR";
+  const allowPumpOnMoteur = controlState?.allowPumpOnMoteur ?? reading?.allowPumpOnMoteur ?? false;
 
   const targetTanks = tanks ?? device?.tanks ?? null;
   const transfer = calculateTankTransfer({
@@ -81,6 +83,12 @@ export function derivePumpReasoning({ reading, controlState, isOnline, tanks, de
       tone: "info",
       blocked: true,
     };
+  }
+
+  // Electricity source block: on Moteur without user permission, pump is blocked by default
+  const powerSourceAllowed = powerSource === "DAWLE" || (powerSource === "MOTEUR" && allowPumpOnMoteur);
+  if (!powerSourceAllowed && pumpStatus !== "ON") {
+    return { key: "reasonMoteurBlocked", params: {}, tone: "warning", blocked: true };
   }
 
   if (pumpMode === "MANUAL") {
@@ -142,10 +150,14 @@ export function derivePumpReasoning({ reading, controlState, isOnline, tanks, de
 export function deriveSafetyChecks({ reading, controlState, isOnline }) {
   const upperLevel = reading?.upperTank?.percentage;
   const lowerLevel = reading?.lowerTank?.percentage;
+  const powerSource = reading?.powerSource ?? null;
+  const allowPumpOnMoteur = controlState?.allowPumpOnMoteur ?? reading?.allowPumpOnMoteur ?? false;
 
   const sensorsHealthy =
     reading?.upperTank?.tankStatus !== "Sensor Error" &&
     reading?.lowerTank?.tankStatus !== "Sensor Error";
+
+  const powerSourceAllowed = powerSource === "DAWLE" || (powerSource === "MOTEUR" && allowPumpOnMoteur);
 
   const checks = [
     {
@@ -183,6 +195,16 @@ export function deriveSafetyChecks({ reading, controlState, isOnline }) {
       params: { threshold: PUMP_STOP_UPPER_LEVEL },
     },
     {
+      id: "powerSource",
+      labelKey: "safetyPowerSource",
+      descriptionKey: "safetyPowerSourceDesc",
+      state: !reading || !powerSource
+        ? "unknown"
+        : powerSourceAllowed
+        ? "pass"
+        : "fail",
+    },
+    {
       id: "systemEnabled",
       labelKey: "safetySystemEnabled",
       descriptionKey: "safetySystemEnabledDesc",
@@ -214,6 +236,8 @@ export function canCommandManualOn({ reading, controlState, isOnline }) {
 
   const lowerLevel = reading?.lowerTank?.percentage;
   const upperLevel = reading?.upperTank?.percentage;
+  const powerSource = reading?.powerSource ?? "MOTEUR";
+  const allowPumpOnMoteur = controlState?.allowPumpOnMoteur ?? reading?.allowPumpOnMoteur ?? false;
 
   if (!hasValue(lowerLevel) || !hasValue(upperLevel)) {
     return { allowed: false, reasonKey: "blockInvalidTelemetry" };
@@ -232,6 +256,10 @@ export function canCommandManualOn({ reading, controlState, isOnline }) {
 
   if (upperLevel >= PUMP_STOP_UPPER_LEVEL) {
     return { allowed: false, reasonKey: "blockUpperFull" };
+  }
+
+  if (powerSource === "MOTEUR" && !allowPumpOnMoteur) {
+    return { allowed: false, reasonKey: "blockMoteurNoPermission" };
   }
 
   return { allowed: true, reasonKey: null };

@@ -6,6 +6,7 @@ export const LANGUAGES = [
   { id: "en", labelKey: "english", dir: "ltr" },
   { id: "ar", labelKey: "arabic", dir: "rtl" },
   { id: "fr", labelKey: "french", dir: "ltr" },
+  { id: "zh", labelKey: "chinese", dir: "ltr" },
 ];
 
 export const LANGUAGE_IDS = LANGUAGES.map((language) => language.id);

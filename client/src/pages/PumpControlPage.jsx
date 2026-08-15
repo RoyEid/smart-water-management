@@ -27,6 +27,7 @@ export default function PumpControlPage() {
     toggleSystemEnabled,
     setPumpMode,
     setManualPumpState,
+    setAllowPumpOnMoteur,
   } = useDeviceControl();
   const { t } = useLanguage();
 
@@ -63,6 +64,7 @@ export default function PumpControlPage() {
               toggleSystemEnabled={toggleSystemEnabled}
               setPumpMode={setPumpMode}
               setManualPumpState={setManualPumpState}
+              setAllowPumpOnMoteur={setAllowPumpOnMoteur}
             />
           )}
         </div>
@@ -133,6 +135,17 @@ export default function PumpControlPage() {
             <dl className="mt-4 space-y-2 border-t border-slate-100 pt-4 text-xs font-medium text-slate-600 dark:border-slate-800 dark:text-slate-300">
               <HardwareRow label={t("relayOutputPin")} value="GPIO 4" mono />
               <HardwareRow label={t("relayLogic")} value={t("activeLow")} mono />
+              <HardwareRow
+                label={t("powerSource")}
+                value={
+                  reading?.powerSource
+                    ? reading.powerSource === "DAWLE"
+                      ? t("dawle")
+                      : t("moteur")
+                    : t("waitingForData")
+                }
+                highlight
+              />
               <HardwareRow
                 label={t("controlMode")}
                 value={

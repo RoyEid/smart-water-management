@@ -11,7 +11,7 @@ import validateRequest from "../middleware/validateRequest.js";
 
 const router = Router();
 
-const tankDataSchema = z.object({
+export const tankDataSchema = z.object({
   distanceCm: z
     .number({ invalid_type_error: "distanceCm must be a number." })
     .finite("distanceCm must be a finite number.")
@@ -35,7 +35,7 @@ const tankDataSchema = z.object({
   }),
 });
 
-const ultrasonicReadingSchema = z.object({
+export const ultrasonicReadingSchema = z.object({
   deviceId: z.string().trim().min(1, "deviceId must be a non-empty string."),
   upperTank: tankDataSchema.optional(),
   lowerTank: tankDataSchema.optional(),
@@ -50,6 +50,9 @@ const ultrasonicReadingSchema = z.object({
   failedSensor: z.string().optional(),
   // YF-S201 binary flow presence detection
   waterFlowDetected: z.boolean().nullable().optional(),
+  // Electricity source detection (DAWLE = government electricity, MOTEUR = generator / no Dawle signal)
+  powerSource: z.enum(["DAWLE", "MOTEUR"]).optional(),
+  allowPumpOnMoteur: z.boolean().optional(),
   // Single-tank backward compatibility fields:
   distanceCm: z.number().finite().min(0).max(400).optional(),
   percentage: z.number().finite().min(0).max(100).optional(),

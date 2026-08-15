@@ -187,7 +187,7 @@ const avatarSchema = z
 const preferencesSchema = z
   .object({
     theme: z.enum(["system", "light", "dark"]).optional(),
-    language: z.enum(["en", "ar", "fr"]).optional(),
+    language: z.enum(["en", "ar", "fr", "zh"]).optional(),
     notificationPrefs: z
       .object({
         pumpAlerts: z.boolean().optional(),

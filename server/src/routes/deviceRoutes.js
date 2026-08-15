@@ -15,6 +15,7 @@ import {
   listTelemetryHistory,
   exportTelemetryHistory,
 } from "../controllers/telemetryHistoryController.js";
+import { getAnalytics } from "../controllers/analyticsController.js";
 const router = Router();
 
 const deviceIdParamSchema = z.object({
@@ -61,6 +62,7 @@ const historyQuerySchema = z.object({
   tank: z.enum(["upper", "lower"]).optional(),
   pumpStatus: z.enum(["ON", "OFF"]).optional(),
   pumpMode: z.enum(["AUTO", "MANUAL"]).optional(),
+  powerSource: z.enum(["DAWLE", "MOTEUR"]).optional(),
   from: isoDate.optional(),
   to: isoDate.optional(),
   minLevel: z.coerce.number().min(0).max(100).optional(),
@@ -69,9 +71,23 @@ const historyQuerySchema = z.object({
 
 const exportQuerySchema = historyQuerySchema.omit({ page: true, limit: true });
 
-// Reading device state and history is available to any signed-in user; only
+export const analyticsQuerySchema = z.object({
+  deviceId: z.string().trim().max(64).optional(),
+  range: z.enum(["24h", "7d", "30d", "all"]).default("24h"),
+  from: isoDate.optional(),
+  to: isoDate.optional(),
+});
+
+// Reading device state, history, and analytics is available to any signed-in user; only
 // renaming, which changes shared state, requires an administrator.
 router.get("/", requireAuth, listDevices);
+
+router.get(
+  "/telemetry/analytics",
+  requireAuth,
+  validateQuery(analyticsQuerySchema),
+  getAnalytics
+);
 
 router.get(
   "/telemetry/history",
@@ -85,6 +101,14 @@ router.get(
   requireAuth,
   validateQuery(exportQuerySchema),
   exportTelemetryHistory
+);
+
+router.get(
+  "/:deviceId/analytics",
+  requireAuth,
+  validateParams(deviceIdParamSchema),
+  validateQuery(analyticsQuerySchema),
+  getAnalytics
 );
 
 router.get(

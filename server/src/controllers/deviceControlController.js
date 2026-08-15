@@ -28,7 +28,7 @@ export function updateDeviceControl(req, res) {
   if (changed) {
     emitDeviceControlChanged(state);
     console.log(
-      `[Device Control] System ${state.systemEnabled ? "ENABLED" : "DISABLED"} | Mode: ${state.pumpMode} | Manual: ${state.manualPumpState}`
+      `[Device Control] System ${state.systemEnabled ? "ENABLED" : "DISABLED"} | Mode: ${state.pumpMode} | Manual: ${state.manualPumpState} | Moteur Pump Permission: ${state.allowPumpOnMoteur ? "ALLOWED" : "BLOCKED"}`
     );
     // Only user-initiated changes are audited. The ESP32 authenticates with the
     // device key and only ever reads this endpoint, so a device request never
@@ -80,6 +80,18 @@ function auditControlChange(req, previous, next) {
       targetType: "device",
       targetId: "tank-01",
       metadata: { command: next.manualPumpState, mode: next.pumpMode },
+    });
+  }
+
+  if (previous.allowPumpOnMoteur !== next.allowPumpOnMoteur) {
+    recordAudit({
+      req,
+      action: next.allowPumpOnMoteur
+        ? AUDIT_ACTIONS.MOTEUR_PUMP_PERMISSION_ENABLED
+        : AUDIT_ACTIONS.MOTEUR_PUMP_PERMISSION_DISABLED,
+      targetType: "device",
+      targetId: "tank-01",
+      metadata: { allowPumpOnMoteur: next.allowPumpOnMoteur },
     });
   }
 }

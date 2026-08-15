@@ -18,6 +18,7 @@ const LANGUAGES = [
   { id: "en", labelKey: "english" },
   { id: "ar", labelKey: "arabic" },
   { id: "fr", labelKey: "french" },
+  { id: "zh", labelKey: "chinese" },
 ];
 
 /**
@@ -112,7 +113,7 @@ export default function PreferencesSection() {
             <LoaderCircle size={12} className="animate-spin text-slate-400" aria-hidden="true" />
           )}
         </div>
-        <div className="grid grid-cols-3 gap-2 sm:gap-3">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
           {LANGUAGES.map((option) => {
             const active = language === option.id;
             return (

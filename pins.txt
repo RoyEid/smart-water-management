@@ -7,4 +7,10 @@ TRIG → GPIO 12
 ECHO → GPIO 13
 
 Relay:
-IN → GPIO 4
+IN → GPIO 5 (or GPIO 4)
+
+Flow Sensor (YF-S201):
+SIG → GPIO 18
+
+Voltage Sensor (Dawle):
+ANALOG OUT → GPIO 3 (ADC1_CH2)

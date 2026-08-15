@@ -17,6 +17,7 @@ function buildFilter(query) {
   if (query.deviceId) filter.deviceId = query.deviceId;
   if (query.pumpStatus) filter.pumpStatus = query.pumpStatus;
   if (query.pumpMode) filter.pumpMode = query.pumpMode;
+  if (query.powerSource) filter.powerSource = query.powerSource;
 
   if (query.from || query.to) {
     filter.receivedAt = {};
@@ -111,6 +112,8 @@ export async function exportTelemetryHistory(req, res, next) {
       "pumpMode",
       "systemEnabled",
       "waterFlowDetected",
+      "powerSource",
+      "allowPumpOnMoteur",
     ];
 
     const lines = [columns.join(",")];
@@ -132,6 +135,8 @@ export async function exportTelemetryHistory(req, res, next) {
           reading.pumpMode,
           reading.systemEnabled,
           reading.waterFlowDetected ?? "",
+          reading.powerSource ?? "MOTEUR",
+          Boolean(reading.allowPumpOnMoteur),
         ]
           .map(csvCell)
           .join(",")

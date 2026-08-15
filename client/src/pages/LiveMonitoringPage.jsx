@@ -1,4 +1,4 @@
-import { Droplets, Radio, Waves } from "lucide-react";
+import { Droplets, Radio, Waves, Zap, ZapOff } from "lucide-react";
 import MetricCard from "../components/dashboard/MetricCard";
 import PageHeader from "../components/dashboard/PageHeader";
 import WaterLevelChart from "../components/dashboard/WaterLevelChart";
@@ -30,6 +30,9 @@ export default function LiveMonitoringPage() {
   const upper = reading?.upperTank ?? null;
   const lower = reading?.lowerTank ?? null;
   const lastUpdated = formatTimestamp(lastUpdatedAt, { locale: language });
+
+  const isDawle = isOnline && reading?.powerSource === "DAWLE";
+  const isMoteur = isOnline && reading?.powerSource === "MOTEUR";
 
   return (
     <div className="space-y-6">
@@ -119,6 +122,22 @@ export default function LiveMonitoringPage() {
               detail="YF-S201 (GPIO 18)"
               accent={reading?.waterFlowDetected === true ? "cyan" : "slate"}
             />
+            <MetricCard
+              icon={isDawle ? Zap : ZapOff}
+              label={t("powerSource")}
+              formatted={{
+                hasValue: true,
+                text: !isOnline
+                  ? t("sensorOffline")
+                  : reading?.powerSource === "DAWLE"
+                  ? t("dawle")
+                  : reading?.powerSource === "MOTEUR"
+                  ? t("moteur")
+                  : t("waitingForData"),
+              }}
+              detail="ZMPT101B (GPIO 3)"
+              accent={isDawle ? "emerald" : "amber"}
+            />
           </section>
 
           {/* Raw stream state — the values a diagnosing engineer needs, kept
@@ -137,6 +156,19 @@ export default function LiveMonitoringPage() {
                 label={t("deviceState")}
                 value={isOnline ? t("deviceOnline") : t("deviceOffline")}
                 tone={isOnline ? "good" : "bad"}
+              />
+              <StreamRow
+                label={t("powerSource")}
+                value={
+                  !isOnline
+                    ? t("deviceOffline")
+                    : reading?.powerSource === "DAWLE"
+                    ? t("dawle")
+                    : reading?.powerSource === "MOTEUR"
+                    ? t("moteur")
+                    : t("waitingForData")
+                }
+                tone={isDawle ? "good" : isMoteur ? "warning" : "muted"}
               />
               <StreamRow
                 label={t("lastUpdated")}

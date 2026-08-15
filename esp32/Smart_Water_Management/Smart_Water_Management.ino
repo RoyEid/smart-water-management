@@ -10,7 +10,7 @@
 // Must be the LAN IP of the machine, never localhost / 127.0.0.1.
 // Re-check with "ipconfig" whenever the laptop rejoins the hotspot,
 // because DHCP can hand out a different address.
-#define SERVER_HOST "10.216.176.157"
+#define SERVER_HOST "10.110.55.157"
 #define SERVER_PORT "5000"
 
 // Built from the parts above so the two endpoints can never drift apart
@@ -117,12 +117,38 @@ void IRAM_ATTR pulseCounter() {
 }
 
 // =====================================
+// Electricity source detection (Dawle / Moteur)
+// =====================================
+
+// Voltage detection sensor for Dawle (government electricity).
+// Connected to GPIO 3 (ADC1_CH2 on ESP32-S3).
+const int VOLTAGE_SENSOR_PIN = 3;
+
+// ZMPT101B AC voltage presence sampling parameters:
+// Samples AC sinusoidal waveform over a 40 ms window (2 full cycles of 50 Hz or 2.4 cycles of 60 Hz).
+const unsigned long VOLTAGE_SAMPLE_WINDOW_MS = 40;
+const int VOLTAGE_PEAK_TO_PEAK_THRESHOLD = 300; // ADC counts (out of 4095) above baseline DC noise
+const unsigned long POWER_SOURCE_DEBOUNCE_MS = 600; // Confirmation window to prevent flicker
+const unsigned long POWER_SOURCE_EVAL_INTERVAL_MS = 100;
+
+// Power source state: "DAWLE" or "MOTEUR" (defaults safely to MOTEUR)
+String powerSource = "MOTEUR";
+bool allowPumpOnMoteur = false;
+
+// Debounce state tracking
+String candidatePowerSource = "MOTEUR";
+unsigned long candidateSourceStartTime = 0;
+unsigned long lastPowerSourceEvalTime = 0;
+
+// =====================================
 // Function declarations
 // =====================================
 
 void connectWiFi();
 void fetchDeviceControlState();
 void updateFlowMeter();
+void updatePowerSourceDetection();
+bool isDawleSignalPresent();
 void updateSimulatedFlow();
 void updateMeasuredFlow();
 
@@ -182,6 +208,7 @@ void setup() {
   pinMode(LOWER_ECHO_PIN, INPUT);
 
   pinMode(RELAY_PIN, OUTPUT);
+  pinMode(VOLTAGE_SENSOR_PIN, INPUT);
 
   digitalWrite(UPPER_TRIG_PIN, LOW);
   digitalWrite(LOWER_TRIG_PIN, LOW);
@@ -200,6 +227,10 @@ void setup() {
   lastFlowEvalTime = millis();
   lastFlowPulseTime = 0;
 
+  // Initial power source sampling
+  lastPowerSourceEvalTime = millis();
+  candidateSourceStartTime = millis();
+
   connectWiFi();
   fetchDeviceControlState();
 
@@ -214,6 +245,7 @@ void setup() {
   Serial.println("Lower tank: TRIG 12, ECHO 13");
   Serial.println("Pump relay: GPIO 4");
   Serial.println("Flow sensor: GPIO 18 (YF-S201)");
+  Serial.println("Voltage sensor (Dawle): GPIO 3 (ADC1_CH2)");
   Serial.println("=================================");
 }
 
@@ -231,6 +263,9 @@ void loop() {
     lastControlFetchTime = millis();
     fetchDeviceControlState();
   }
+
+  // Continuous evaluation of electricity source presence (Dawle / Moteur)
+  updatePowerSourceDetection();
 
   // Runs every loop pass so the 1 s flow window and the pump-edge reset stay
   // accurate regardless of the slower 2 s telemetry cadence below.
@@ -406,6 +441,12 @@ void fetchDeviceControlState() {
       manualPumpState = "OFF";
     }
 
+    if (payload.indexOf("\"allowPumpOnMoteur\":true") != -1) {
+      allowPumpOnMoteur = true;
+    } else if (payload.indexOf("\"allowPumpOnMoteur\":false") != -1) {
+      allowPumpOnMoteur = false;
+    }
+
     int upperIdx = payload.indexOf("\"upperTankHeightCm\":");
     if (upperIdx != -1) {
       int start = upperIdx + 20;
@@ -476,6 +517,9 @@ void fetchDeviceControlState() {
 
     Serial.print("Manual command: ");
     Serial.println(manualPumpState);
+
+    Serial.print("Moteur permission: ");
+    Serial.println(allowPumpOnMoteur ? "ALLOWED" : "BLOCKED");
   } else {
     Serial.print("Control HTTP error: ");
     Serial.print(code);
@@ -631,6 +675,18 @@ void updatePump(
     return;
   }
 
+  // Authoritative Power Source Permission check
+  // Dawle permits normal pump operation; Moteur blocks pump unless explicit user permission is granted.
+  bool powerSourceAllowsPump = (powerSource == "DAWLE") || (powerSource == "MOTEUR" && allowPumpOnMoteur);
+  if (!powerSourceAllowsPump) {
+    if (pumpRunning) {
+      Serial.println(
+        "Pump blocked: Power source is MOTEUR without user permission");
+      pumpOff();
+    }
+    return;
+  }
+
   // Manual mode
   if (pumpMode == "MANUAL") {
     if (
@@ -707,6 +763,69 @@ void pumpOff() {
 
 String getPumpStatus() {
   return pumpRunning ? "ON" : "OFF";
+}
+
+// =====================================
+// Electricity source presence detection (Dawle / Moteur)
+// =====================================
+
+// Samples the AC waveform on VOLTAGE_SENSOR_PIN over VOLTAGE_SAMPLE_WINDOW_MS.
+// Active AC voltage oscillates sinusoidally, producing Vmax - Vmin > threshold.
+// Flat DC bias or 0V (no signal / broken sensor / power outage) yields Vmax - Vmin near 0.
+bool isDawleSignalPresent() {
+  unsigned long start = millis();
+  int minVal = 4095;
+  int maxVal = 0;
+
+  while (millis() - start < VOLTAGE_SAMPLE_WINDOW_MS) {
+    int val = analogRead(VOLTAGE_SENSOR_PIN);
+    if (val < minVal) minVal = val;
+    if (val > maxVal) maxVal = val;
+    delayMicroseconds(500);
+  }
+
+  int peakToPeak = maxVal - minVal;
+  return (peakToPeak >= VOLTAGE_PEAK_TO_PEAK_THRESHOLD);
+}
+
+void updatePowerSourceDetection() {
+  unsigned long now = millis();
+  if (now - lastPowerSourceEvalTime < POWER_SOURCE_EVAL_INTERVAL_MS) {
+    return;
+  }
+  lastPowerSourceEvalTime = now;
+
+  bool dawleDetected = isDawleSignalPresent();
+  String rawSource = dawleDetected ? "DAWLE" : "MOTEUR";
+
+  if (rawSource != candidatePowerSource) {
+    candidatePowerSource = rawSource;
+    candidateSourceStartTime = now;
+  } else if (candidatePowerSource != powerSource && (now - candidateSourceStartTime >= POWER_SOURCE_DEBOUNCE_MS)) {
+    String oldSource = powerSource;
+    powerSource = candidatePowerSource;
+
+    Serial.println();
+    Serial.print("[POWER] Electricity source changed: ");
+    Serial.print(oldSource);
+    Serial.print(" -> ");
+    Serial.println(powerSource);
+
+    // DAWLE -> MOTEUR transition:
+    // Immediately stop pump if running, and reset allowPumpOnMoteur to false
+    if (oldSource == "DAWLE" && powerSource == "MOTEUR") {
+      allowPumpOnMoteur = false;
+      if (pumpRunning) {
+        Serial.println("[POWER] DAWLE lost -> MOTEUR active. Pump stopped immediately!");
+        pumpOff();
+      }
+    } else if (oldSource == "MOTEUR" && powerSource == "DAWLE") {
+      // MOTEUR -> DAWLE transition:
+      // Reset allowPumpOnMoteur because Moteur restriction is lifted
+      allowPumpOnMoteur = false;
+      Serial.println("[POWER] DAWLE returned. Normal pump logic resumed.");
+    }
+  }
 }
 
 // =====================================
@@ -834,6 +953,14 @@ int sendReading(
 
   json += "\"waterFlowDetected\":";
   json += waterFlowDetected ? "true" : "false";
+  json += ",";
+
+  json += "\"powerSource\":\"";
+  json += powerSource;
+  json += "\",";
+
+  json += "\"allowPumpOnMoteur\":";
+  json += allowPumpOnMoteur ? "true" : "false";
 
   json += "}";
 
@@ -912,6 +1039,14 @@ void sendSensorError(
   json += sensorName;
   json += "\",";
 
+  json += "\"powerSource\":\"";
+  json += powerSource;
+  json += "\",";
+
+  json += "\"allowPumpOnMoteur\":";
+  json += allowPumpOnMoteur ? "true" : "false";
+  json += ",";
+
   json += "\"pumpStatus\":\"OFF\"";
 
   json += "}";
@@ -960,7 +1095,16 @@ void printReadings(
     systemEnabled ? "ENABLED" : "DISABLED");
 
   Serial.print(" | Mode: ");
-  Serial.println(pumpMode);
+  Serial.print(pumpMode);
+
+  Serial.print(" | Power: ");
+  Serial.print(powerSource);
+  if (powerSource == "MOTEUR") {
+    Serial.print(" (Permission: ");
+    Serial.print(allowPumpOnMoteur ? "ALLOWED" : "BLOCKED");
+    Serial.print(")");
+  }
+  Serial.println();
 
   Serial.println("=================================");
 }

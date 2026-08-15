@@ -124,3 +124,19 @@ test("firmware tank statuses map to translation keys", () => {
   assert.equal(tankStatusKey("Unknown"), null);
   assert.equal(tankStatusKey(undefined), null);
 });
+
+test("all language dictionaries (en, ar, fr, zh) have complete key parity", async () => {
+  const { translations } = await import("../locales/translations.js");
+  const enKeys = Object.keys(translations.en);
+  assert.ok(enKeys.length > 100, "en dictionary should have over 100 translation keys");
+
+  for (const lang of ["ar", "fr", "zh"]) {
+    assert.ok(translations[lang], `translations for ${lang} should exist`);
+    for (const key of enKeys) {
+      assert.ok(
+        translations[lang][key] !== undefined && translations[lang][key] !== "",
+        `Missing translation key "${key}" in language "${lang}"`
+      );
+    }
+  }
+});

@@ -17,7 +17,9 @@ import DashboardPage from "./pages/DashboardPage";
 import PumpControlPage from "./pages/PumpControlPage";
 import LiveMonitoringPage from "./pages/LiveMonitoringPage";
 import WaterFlowPage from "./pages/WaterFlowPage";
+import ElectricityPage from "./pages/ElectricityPage";
 import HistoryPage from "./pages/HistoryPage";
+import AnalyticsPage from "./pages/AnalyticsPage";
 import AlertsPage from "./pages/AlertsPage";
 import DevicesPage from "./pages/DevicesPage";
 import DeviceDetailPage from "./pages/DeviceDetailPage";
@@ -59,7 +61,9 @@ function App() {
           <Route path="/pump-control" element={<PumpControlPage />} />
           <Route path="/live-monitoring" element={<LiveMonitoringPage />} />
           <Route path="/water-flow" element={<WaterFlowPage />} />
+          <Route path="/electricity" element={<ElectricityPage />} />
           <Route path="/history" element={<HistoryPage />} />
+          <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/alerts" element={<AlertsPage />} />
           <Route path="/devices" element={<DevicesPage />} />
           <Route path="/devices/:deviceId" element={<DeviceDetailPage />} />

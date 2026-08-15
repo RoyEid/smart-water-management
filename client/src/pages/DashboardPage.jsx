@@ -3,6 +3,7 @@ import AlertsPanel from "../components/dashboard/AlertsPanel";
 import AutoControlReasonCard from "../components/dashboard/AutoControlReasonCard";
 import MetricCard from "../components/dashboard/MetricCard";
 import PageHeader from "../components/dashboard/PageHeader";
+import PowerSourceCard from "../components/dashboard/PowerSourceCard";
 import TankVisual from "../components/dashboard/TankVisual";
 import WaterFlowCard from "../components/dashboard/WaterFlowCard";
 import WaterLevelChart from "../components/dashboard/WaterLevelChart";
@@ -32,7 +33,7 @@ export default function DashboardPage() {
     lastUpdatedAt,
     retry,
   } = useTelemetry();
-  const { controlState } = useDeviceControl();
+  const { controlState, updating, setAllowPumpOnMoteur } = useDeviceControl();
   const { alerts, isLoading: alertsLoading } = useAlerts();
   const { t, language } = useLanguage();
 
@@ -172,7 +173,14 @@ export default function DashboardPage() {
         />
       </section>
 
-      <section>
+      <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <PowerSourceCard
+          powerSource={reading?.powerSource}
+          allowPumpOnMoteur={controlState.allowPumpOnMoteur ?? reading?.allowPumpOnMoteur}
+          isOnline={isOnline}
+          updating={updating}
+          setAllowPumpOnMoteur={setAllowPumpOnMoteur}
+        />
         <WaterFlowCard
           waterFlowDetected={reading?.waterFlowDetected}
           isOnline={isOnline}

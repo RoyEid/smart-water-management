@@ -10,6 +10,7 @@ let deviceControlState = {
   systemEnabled: true,
   pumpMode: "AUTO", // "AUTO" | "MANUAL"
   manualPumpState: "OFF", // "ON" | "OFF"
+  allowPumpOnMoteur: false, // boolean: explicit user permission to operate pump on generator
   updatedAt: new Date(),
 };
 
@@ -18,6 +19,7 @@ function serializeState() {
     systemEnabled: deviceControlState.systemEnabled,
     pumpMode: deviceControlState.pumpMode,
     manualPumpState: deviceControlState.manualPumpState,
+    allowPumpOnMoteur: Boolean(deviceControlState.allowPumpOnMoteur),
     updatedAt: deviceControlState.updatedAt.toISOString(),
   };
 }
@@ -58,14 +60,17 @@ export function setDeviceControlState(updates = {}) {
 
   // Safety rule (unchanged): disabling the system forces the manual command
   // back to OFF, so re-enabling can never resume a pump the operator stopped.
+  // Also revoke any temporary Moteur override.
   if (nextState.systemEnabled === false) {
     nextState.manualPumpState = "OFF";
+    nextState.allowPumpOnMoteur = false;
   }
 
   if (
     nextState.systemEnabled !== deviceControlState.systemEnabled ||
     nextState.pumpMode !== deviceControlState.pumpMode ||
-    nextState.manualPumpState !== deviceControlState.manualPumpState
+    nextState.manualPumpState !== deviceControlState.manualPumpState ||
+    nextState.allowPumpOnMoteur !== deviceControlState.allowPumpOnMoteur
   ) {
     changed = true;
     nextState.updatedAt = new Date();
@@ -92,6 +97,7 @@ function persistState() {
         systemEnabled: deviceControlState.systemEnabled,
         pumpMode: deviceControlState.pumpMode,
         manualPumpState: deviceControlState.manualPumpState,
+        allowPumpOnMoteur: deviceControlState.allowPumpOnMoteur,
         updatedAt: deviceControlState.updatedAt,
       },
     },
@@ -126,11 +132,13 @@ export async function hydrateDeviceControlState() {
       // deliberately dropped so the hardware comes back in its safe state and
       // the operator has to re-issue the command.
       manualPumpState: "OFF",
+      // Moteur permission is always reset to false on restart for safety.
+      allowPumpOnMoteur: false,
       updatedAt: stored.updatedAt ? new Date(stored.updatedAt) : new Date(),
     };
 
     console.log(
-      `[Device Control] Restored: system ${deviceControlState.systemEnabled ? "ENABLED" : "DISABLED"}, mode ${deviceControlState.pumpMode}, manual reset to OFF.`
+      `[Device Control] Restored: system ${deviceControlState.systemEnabled ? "ENABLED" : "DISABLED"}, mode ${deviceControlState.pumpMode}, manual reset to OFF, Moteur permission reset to false.`
     );
 
     return serializeState();

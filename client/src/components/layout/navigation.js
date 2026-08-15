@@ -4,12 +4,12 @@ import {
   Cpu,
   History,
   LayoutDashboard,
-  Plug,
   Radio,
   Settings,
   Shield,
   Sliders,
   Waves,
+  Zap,
 } from "lucide-react";
 
 /**
@@ -23,7 +23,9 @@ export const ACTIVE_NAV_ITEMS = [
   { to: "/pump-control", labelKey: "pumpControl", titleKey: "remotePumpControl", icon: Sliders },
   { to: "/live-monitoring", labelKey: "liveMonitoring", titleKey: "liveSensorTelemetry", icon: Radio },
   { to: "/water-flow", labelKey: "waterFlow", titleKey: "waterFlow", icon: Waves },
+  { to: "/electricity", labelKey: "electricity", titleKey: "electricitySource", icon: Zap },
   { to: "/history", labelKey: "history", titleKey: "telemetryHistory", icon: History },
+  { to: "/analytics", labelKey: "analytics", titleKey: "telemetryAnalytics", icon: BarChart3 },
   { to: "/alerts", labelKey: "alerts", titleKey: "alerts", icon: Bell },
   { to: "/devices", labelKey: "devices", titleKey: "devices", icon: Cpu },
   { to: "/settings", labelKey: "settings", titleKey: "accountSettings", icon: Settings },
@@ -51,13 +53,9 @@ export const ADMIN_SUB_NAV = [
  * Modules that are deliberately not built yet.
  *
  * These render as inert labels with a "Soon" badge — no route, no click
- * handler, no mock screen. Electricity-source monitoring in particular must
- * not ship a functional-looking UI backed by nothing.
+ * handler, no mock screen.
  */
-export const FUTURE_NAV_ITEMS = [
-  { id: "electricity", labelKey: "electricitySource", icon: Plug },
-  { id: "analytics", labelKey: "analytics", icon: BarChart3 },
-];
+export const FUTURE_NAV_ITEMS = [];
 
 /**
  * Maps a pathname to its header title key. Longest match wins so
