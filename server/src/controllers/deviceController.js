@@ -50,6 +50,7 @@ function serializeDevice(device, latestReading, control) {
     displayName: device.displayName || device.deviceId,
     hasCustomName: Boolean(device.displayName),
     owner: device.owner ?? null,
+    ownerAssignedAt: device.ownerAssignedAt ?? null,
     tanks: serializeTankConfig(device.tanks),
     isOnline: online,
     lastSeenAt: device.lastSeenAt ?? null,
@@ -72,14 +73,17 @@ function serializeDevice(device, latestReading, control) {
 
 export async function listDevices(req, res, next) {
   try {
-    const devices = await Device.find({}).sort({ deviceId: 1 }).lean();
-    const latestReading = getLatestReading();
-    const control = getDeviceControlState();
+    const filter = req.user?.role === "admin" ? {} : { owner: req.user._id };
+    const devices = await Device.find(filter).sort({ deviceId: 1 }).lean();
 
     res.status(200).json({
       success: true,
       devices: devices.map((device) =>
-        serializeDevice(device, latestReading, control)
+        serializeDevice(
+          device,
+          getLatestReading(device.deviceId),
+          getDeviceControlState(device.deviceId)
+        )
       ),
     });
   } catch (error) {
@@ -97,8 +101,16 @@ export async function getDevice(req, res, next) {
       return next(error);
     }
 
-    const latestReading = getLatestReading();
-    const control = getDeviceControlState();
+    if (req.user?.role === "user") {
+      if (!device.owner || String(device.owner) !== String(req.user._id)) {
+        const error = new Error("You are not authorized to view this device.");
+        error.statusCode = 403;
+        return next(error);
+      }
+    }
+
+    const latestReading = getLatestReading(device.deviceId);
+    const control = getDeviceControlState(device.deviceId);
 
     const lastStored = await UltrasonicReading.findOne({
       deviceId: device.deviceId,
@@ -162,7 +174,11 @@ export async function renameDevice(req, res, next) {
     res.status(200).json({
       success: true,
       message: "Device name updated.",
-      device: serializeDevice(device.toObject(), getLatestReading(), getDeviceControlState()),
+      device: serializeDevice(
+        device.toObject(),
+        getLatestReading(device.deviceId),
+        getDeviceControlState(device.deviceId)
+      ),
     });
   } catch (error) {
     next(error);
@@ -182,6 +198,13 @@ export async function updateTankConfig(req, res, next) {
     if (!device) {
       const error = new Error("Device not found.");
       error.statusCode = 404;
+      return next(error);
+    }
+
+    // STRICT RULE: User must own the device to configure its tanks
+    if (!device.owner || String(device.owner) !== String(req.user._id)) {
+      const error = new Error("You are not authorized to configure this device.");
+      error.statusCode = 403;
       return next(error);
     }
 
@@ -250,7 +273,11 @@ export async function updateTankConfig(req, res, next) {
     res.status(200).json({
       success: true,
       message: "Tank configuration saved. It will sync when the device reconnects.",
-      device: serializeDevice(device.toObject(), getLatestReading(), getDeviceControlState()),
+      device: serializeDevice(
+        device.toObject(),
+        getLatestReading(device.deviceId),
+        getDeviceControlState(device.deviceId)
+      ),
     });
   } catch (error) {
     next(error);

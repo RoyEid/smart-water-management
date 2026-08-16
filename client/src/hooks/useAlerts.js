@@ -8,6 +8,7 @@ import {
   markAlertRead as markAlertReadRequest,
   markAllAlertsRead as markAllAlertsReadRequest,
 } from "../services/alertApi";
+import { useAuth } from "../context/AuthContext";
 import { getApiErrorMessage, isUnauthorized } from "../utils/apiError";
 
 /**
@@ -18,6 +19,7 @@ import { getApiErrorMessage, isUnauthorized } from "../utils/apiError";
  * telemetry hook — no second connection is opened for notifications.
  */
 export default function useAlerts() {
+  const { user, isAuthenticated } = useAuth();
   const [alerts, setAlerts] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -25,6 +27,15 @@ export default function useAlerts() {
   const mountedRef = useRef(true);
 
   const load = useCallback(async () => {
+    if (!isAuthenticated) {
+      if (mountedRef.current) {
+        setAlerts([]);
+        setUnreadCount(0);
+        setIsLoading(false);
+      }
+      return;
+    }
+
     try {
       const data = await fetchRecentAlerts();
       if (!mountedRef.current) return;
@@ -33,15 +44,20 @@ export default function useAlerts() {
       setError("");
     } catch (requestError) {
       if (!mountedRef.current) return;
-      // A signed-out visitor is handled by the route guard; the bell just stays
-      // quiet rather than showing an error over the whole header.
       if (!isUnauthorized(requestError)) {
         setError(getApiErrorMessage(requestError, "Unable to load notifications."));
       }
     } finally {
       if (mountedRef.current) setIsLoading(false);
     }
-  }, []);
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    setAlerts([]);
+    setUnreadCount(0);
+    setIsLoading(true);
+    setError("");
+  }, [user?._id]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -50,8 +66,6 @@ export default function useAlerts() {
       if (!mountedRef.current || !alert?.id) return;
 
       setAlerts((current) => {
-        // The backend deduplicates conditions, but a reconnect can replay an
-        // alert the list already holds. Matching on id keeps the list unique.
         const existingIndex = current.findIndex((item) => item.id === alert.id);
         if (existingIndex >= 0) {
           const next = [...current];
@@ -61,7 +75,6 @@ export default function useAlerts() {
         return [alert, ...current].slice(0, 8);
       });
 
-      // Only a genuinely new unread alert moves the badge.
       setUnreadCount((count) => (alert.isRead ? count : count + 1));
     };
 
@@ -74,19 +87,13 @@ export default function useAlerts() {
       );
     };
 
-    // A reconnect may have missed events entirely, so the list is re-fetched
-    // rather than assumed to still be accurate.
     const onConnect = () => load();
 
     sensorSocket.on("alert:new", onAlertCreated);
     sensorSocket.on("alert:resolved", onAlertResolved);
     sensorSocket.on("connect", onConnect);
     acquireSensorSocket();
-    // react-hooks/set-state-in-effect cannot see that `load` only writes state
-    // after its await resolves, so it reports a synchronous setState that does
-    // not occur. Fetching the initial list alongside the socket subscription is
-    // the correct place for this call.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+
     load();
 
     return () => {
@@ -96,7 +103,7 @@ export default function useAlerts() {
       sensorSocket.off("connect", onConnect);
       releaseSensorSocket();
     };
-  }, [load]);
+  }, [load, user?._id]);
 
   const markRead = useCallback(async (id) => {
     // Optimistic: the bell should respond immediately. The server response

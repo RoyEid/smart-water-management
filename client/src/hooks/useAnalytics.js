@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchAnalyticsOverview } from "../services/deviceApi";
+import { useAuth } from "../context/AuthContext";
 
 export default function useAnalytics(initialRange = "24h") {
+  const { user, isAuthenticated } = useAuth();
   const [range, setRange] = useState(initialRange);
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -10,7 +12,20 @@ export default function useAnalytics(initialRange = "24h") {
 
   const mountedRef = useRef(true);
 
+  useEffect(() => {
+    setAnalytics(null);
+    setError(null);
+    setLoading(true);
+  }, [user?._id]);
+
   const loadData = useCallback(async (targetRange) => {
+    if (!isAuthenticated) {
+      if (mountedRef.current) {
+        setAnalytics(null);
+        setLoading(false);
+      }
+      return;
+    }
     setLoading(true);
     try {
       const data = await fetchAnalyticsOverview({ range: targetRange });
@@ -32,7 +47,7 @@ export default function useAnalytics(initialRange = "24h") {
         setLoading(false);
       }
     }
-  }, []);
+  }, [isAuthenticated]);
 
   useEffect(() => {
     mountedRef.current = true;

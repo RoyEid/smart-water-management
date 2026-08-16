@@ -81,7 +81,7 @@ export default function DashboardLayout() {
         <div className={`flex min-h-screen flex-col transition-all duration-300 ${desktopPadding}`}>
           <TopHeader
             pageTitle={pageTitle}
-            deviceId={telemetry.reading?.deviceId || "tank-01"}
+            deviceId={telemetry.device?.deviceId || telemetry.reading?.deviceId || null}
             isOnline={telemetry.isOnline}
             onOpenMobileMenu={openMobileMenu}
           />

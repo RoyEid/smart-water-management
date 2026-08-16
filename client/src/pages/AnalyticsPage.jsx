@@ -1,10 +1,10 @@
-import { RefreshCw, Info } from "lucide-react";
+import { RefreshCw, Info, Cpu } from "lucide-react";
 import PageHeader from "../components/dashboard/PageHeader";
 import AnalyticsKPIs from "../components/analytics/AnalyticsKPIs";
 import WaterTrendAreaChart from "../components/analytics/WaterTrendAreaChart";
 import VolumeTransferredBarChart from "../components/analytics/VolumeTransferredBarChart";
 import PowerAndModeBreakdown from "../components/analytics/PowerAndModeBreakdown";
-import { LoadingState, ErrorState } from "../components/ui/StateViews";
+import { LoadingState, ErrorState, EmptyState } from "../components/ui/StateViews";
 import useAnalytics from "../hooks/useAnalytics";
 import { useTelemetry } from "../context/TelemetryContext";
 import { useLanguage } from "../context/LanguageContext";
@@ -70,6 +70,14 @@ export default function AnalyticsPage() {
       {error && <ErrorState message={error} onRetry={refresh} retryLabel={t("retry")} />}
 
       {loading && !analytics && <LoadingState message={t("loadingAnalytics") || "Computing analytics aggregation..."} />}
+
+      {!loading && !error && !analytics && (
+        <EmptyState
+          icon={Cpu}
+          title={t("noDeviceAssignedTitle")}
+          description={t("noDeviceAssignedDesc")}
+        />
+      )}
 
       {analytics && (
         <>

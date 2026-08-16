@@ -49,3 +49,8 @@ export async function fetchSystemConfig() {
   const { data } = await api.get("/admin/config");
   return data;
 }
+
+export async function assignDeviceOwner(deviceId, userId) {
+  const { data } = await api.patch(`/admin/devices/${deviceId}/assign`, { userId });
+  return data;
+}

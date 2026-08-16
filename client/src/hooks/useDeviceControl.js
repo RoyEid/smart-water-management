@@ -7,6 +7,7 @@ import {
   fetchDeviceControlState,
   updateDeviceControlState,
 } from "../services/deviceControlApi";
+import { useAuth } from "../context/AuthContext";
 import { getApiErrorMessage } from "../utils/apiError";
 
 /**
@@ -18,6 +19,7 @@ import { getApiErrorMessage } from "../utils/apiError";
  * confirmed with the backend.
  */
 export default function useDeviceControl() {
+  const { user, isAuthenticated } = useAuth();
   const [controlState, setControlState] = useState({
     systemEnabled: undefined,
     pumpMode: null,
@@ -37,8 +39,27 @@ export default function useDeviceControl() {
   const inFlightRef = useRef(false);
 
   const applyState = useCallback((data) => {
-    if (!data) return;
+    if (!data) {
+      setControlState({
+        systemEnabled: undefined,
+        pumpMode: null,
+        manualPumpState: null,
+        allowPumpOnMoteur: false,
+        updatedAt: null,
+      });
+      return;
+    }
     const control = data.control ?? data;
+    if (!control || (control.pumpMode === undefined && control.systemEnabled === undefined)) {
+      setControlState({
+        systemEnabled: undefined,
+        pumpMode: null,
+        manualPumpState: null,
+        allowPumpOnMoteur: false,
+        updatedAt: null,
+      });
+      return;
+    }
 
     setControlState({
       systemEnabled: control.systemEnabled ?? undefined,
@@ -51,6 +72,14 @@ export default function useDeviceControl() {
   }, []);
 
   const load = useCallback(async () => {
+    if (!isAuthenticated) {
+      if (mountedRef.current) {
+        applyState(null);
+        setLoading(false);
+      }
+      return;
+    }
+
     try {
       const data = await fetchDeviceControlState();
       if (mountedRef.current) applyState(data);
@@ -63,20 +92,28 @@ export default function useDeviceControl() {
     } finally {
       if (mountedRef.current) setLoading(false);
     }
-  }, [applyState]);
+  }, [applyState, isAuthenticated]);
+
+  useEffect(() => {
+    setControlState({
+      systemEnabled: undefined,
+      pumpMode: null,
+      manualPumpState: null,
+      allowPumpOnMoteur: false,
+      updatedAt: null,
+    });
+    setLoading(true);
+    setError("");
+  }, [user?._id]);
 
   useEffect(() => {
     mountedRef.current = true;
 
     const handleControlUpdate = (newControlState) => {
       if (!mountedRef.current) return;
-      // Another browser (or the same user in a second tab) changed the state;
-      // this client follows rather than holding a stale view.
       applyState(newControlState);
     };
 
-    // A reconnect may have missed a control change, so the state is re-fetched
-    // rather than assumed still current.
     const handleConnect = () => load();
 
     sensorSocket.on("control:update", handleControlUpdate);
@@ -84,11 +121,6 @@ export default function useDeviceControl() {
     sensorSocket.on("connect", handleConnect);
     acquireSensorSocket();
 
-    // react-hooks/set-state-in-effect cannot see that `load` only writes state
-    // after its await resolves, so it reports a synchronous setState that does
-    // not occur. The initial control state has to be fetched alongside the
-    // socket subscription that keeps it current.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
 
     return () => {
@@ -98,7 +130,7 @@ export default function useDeviceControl() {
       sensorSocket.off("connect", handleConnect);
       releaseSensorSocket();
     };
-  }, [applyState, load]);
+  }, [applyState, load, user?._id]);
 
   const sendUpdate = useCallback(
     async (updates, commandLabel) => {

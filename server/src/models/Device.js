@@ -50,6 +50,12 @@ const deviceSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    // Timestamp when current owner was assigned. Used for historical privacy isolation.
+    ownerAssignedAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
     // Physical tank configuration (configured by device owner)
     tanks: {
       upper: {

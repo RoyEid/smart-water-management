@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import api from "../services/api";
 import OAuthButtons from "../components/OAuthButtons";
+import { useAuth } from "../context/AuthContext";
 
 /**
  * Maps the ?oauthError= code the backend redirects with onto a message.
@@ -43,6 +44,7 @@ function readOAuthErrorStatus() {
 }
 
 function LoginPage() {
+  const { refreshUser } = useAuth();
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -124,6 +126,7 @@ function LoginPage() {
         rememberMe: formData.rememberMe,
       });
 
+      await refreshUser();
       navigate("/dashboard", { replace: true });
     } catch (error) {
       setStatus({

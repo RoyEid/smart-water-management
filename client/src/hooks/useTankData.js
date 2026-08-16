@@ -5,6 +5,7 @@ import sensorSocket, {
 } from "../services/socket";
 import { fetchLatestUltrasonicReading } from "../services/sensorApi";
 import { fetchDevice, fetchDevices } from "../services/deviceApi";
+import { useAuth } from "../context/AuthContext";
 import { getApiErrorMessage, isUnauthorized } from "../utils/apiError";
 
 const ONLINE_WINDOW_MS = 10_000;
@@ -110,19 +111,15 @@ function normalizeReading(value) {
 /**
  * Owns the live telemetry stream for the whole dashboard.
  *
- * Uses the shared socket singleton — it never constructs a socket — and the
- * refcounted acquire/release pair, so several mounted consumers share one
- * connection and a page change does not tear down the connection the next page
- * is about to use.
+ * Scoped strictly to the currently authenticated user's assigned device(s).
  */
 export default function useTankData() {
+  const { user, isAdmin, isAuthenticated } = useAuth();
   const [reading, setReading] = useState(null);
   const [readings, setReadings] = useState([]);
   const [device, setDevice] = useState(null);
   const [error, setError] = useState("");
   const [unauthorized, setUnauthorized] = useState(false);
-  // "loading" until the first fetch resolves, so the UI can show a skeleton
-  // instead of an empty state that looks like "the device has never reported".
   const [isLoading, setIsLoading] = useState(true);
   const [socketConnected, setSocketConnected] = useState(sensorSocket.connected);
   const [clock, setClock] = useState(() => Date.now());
@@ -131,13 +128,16 @@ export default function useTankData() {
   // Keeps the newest-timestamp guard across renders without re-running the
   // subscription effect, which would drop and re-add listeners.
   const newestRef = useRef(0);
+  const currentDeviceRef = useRef(null);
 
-  const refetchDevice = useCallback(async (targetDeviceId = "tank-01") => {
+  const refetchDevice = useCallback(async (targetDeviceId) => {
     try {
-      const target = reading?.deviceId || targetDeviceId;
+      const target = targetDeviceId || currentDeviceRef.current?.deviceId || reading?.deviceId;
+      if (!target) return;
       const res = await fetchDevice(target);
       if (res?.device) {
         setDevice(res.device);
+        currentDeviceRef.current = res.device;
       }
     } catch {
       // Ignore device fetch errors silently if device isn't registered yet
@@ -150,15 +150,32 @@ export default function useTankData() {
     setReloadToken((token) => token + 1);
   }, []);
 
+  // When user identity changes, reset all state to prevent any stale leaks
+  useEffect(() => {
+    setReading(null);
+    setReadings([]);
+    setDevice(null);
+    currentDeviceRef.current = null;
+    newestRef.current = 0;
+    setIsLoading(true);
+    setError("");
+  }, [user?._id]);
+
   useEffect(() => {
     let mounted = true;
 
     const applyReading = (next) => {
       if (!isReading(next)) return false;
 
+      // Normal users must never receive or apply readings from another user's device
+      if (!isAdmin && currentDeviceRef.current && next.deviceId !== currentDeviceRef.current.deviceId) {
+        return false;
+      }
+      if (!isAdmin && !currentDeviceRef.current) {
+        return false;
+      }
+
       const timestamp = readingTime(next);
-      // Out-of-order delivery (a slow REST response landing after a socket
-      // push) must not roll the dashboard backwards.
       if (timestamp < newestRef.current) return true;
       newestRef.current = timestamp;
 
@@ -173,33 +190,46 @@ export default function useTankData() {
     };
 
     const loadLatest = async () => {
+      if (!isAuthenticated) {
+        if (mounted) {
+          setReading(null);
+          setReadings([]);
+          setDevice(null);
+          currentDeviceRef.current = null;
+          setIsLoading(false);
+        }
+        return;
+      }
+
       try {
-        const [latest] = await Promise.all([
-          fetchLatestUltrasonicReading(),
-          (async () => {
-            try {
-              const res = await fetchDevices();
-              const deviceList = res?.devices || (Array.isArray(res) ? res : []);
-              if (mounted && deviceList.length > 0) {
-                setDevice(deviceList[0]);
-              }
-            } catch {
-              // Silently ignore if device list fails
-            }
-          })(),
-        ]);
+        const res = await fetchDevices();
+        const deviceList = res?.devices || (Array.isArray(res) ? res : []);
 
         if (!mounted) return;
 
-        if (!latest) {
-          // A valid "no device has ever reported" answer. Not an error, and
-          // not a reason to keep showing a loading skeleton forever.
+        if (deviceList.length === 0) {
+          setDevice(null);
+          currentDeviceRef.current = null;
+          setReading(null);
+          setReadings([]);
           setIsLoading(false);
           return;
         }
 
-        // A malformed but truthy payload must also end the loading state,
-        // otherwise the UI waits on a response that already arrived.
+        const activeDevice = deviceList[0];
+        setDevice(activeDevice);
+        currentDeviceRef.current = activeDevice;
+
+        const latest = await fetchLatestUltrasonicReading(activeDevice.deviceId);
+
+        if (!mounted) return;
+
+        if (!latest) {
+          setReading(null);
+          setIsLoading(false);
+          return;
+        }
+
         if (!applyReading(latest)) {
           setIsLoading(false);
         }
@@ -224,8 +254,6 @@ export default function useTankData() {
       if (!mounted) return;
       setSocketConnected(true);
       setError("");
-      // Re-sync on reconnect: readings that arrived while the socket was down
-      // were never pushed, so the REST snapshot fills the gap.
       loadLatest();
     };
 
@@ -246,8 +274,6 @@ export default function useTankData() {
     acquireSensorSocket();
     loadLatest();
 
-    // Drives the online/offline decision. Without it a device that stopped
-    // reporting would stay "online" until the next render happened to occur.
     const interval = window.setInterval(() => setClock(Date.now()), 1_000);
 
     return () => {
@@ -259,7 +285,7 @@ export default function useTankData() {
       sensorSocket.off("connect_error", onConnectError);
       releaseSensorSocket();
     };
-  }, [reloadToken]);
+  }, [reloadToken, user?._id, isAuthenticated, isAdmin]);
 
   // Online purely as a function of how old the newest reading is. Nothing here
   // depends on component lifetime, so a remount cannot flip a live device

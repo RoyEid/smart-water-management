@@ -1,7 +1,6 @@
 import UltrasonicReading from "../models/UltrasonicReading.js";
 import Device from "../models/Device.js";
 
-const DEFAULT_DEVICE_ID = "tank-01";
 export const NOMINAL_SAMPLE_INTERVAL_SECONDS = 2; // ESP32 sends telemetry every 2 seconds
 
 /**
@@ -115,11 +114,13 @@ export function computeBucketItem(b) {
  * Calculates analytics overview, time-series buckets, and distribution KPIs.
  */
 export async function getAnalyticsOverview({
-  deviceId = DEFAULT_DEVICE_ID,
+  deviceId,
   range = "24h",
   from,
   to,
 } = {}) {
+  if (!deviceId) return null;
+
   const { startDate, endDate } = computeDateRange(range, from, to);
 
   let upperCapacity = 1000;

@@ -1,10 +1,11 @@
-import { CheckCircle2, CircleHelp, RotateCw, ShieldCheck, XCircle } from "lucide-react";
+import { CheckCircle2, CircleHelp, Cpu, RotateCw, ShieldCheck, XCircle } from "lucide-react";
 import DeviceControlPanel from "../components/dashboard/DeviceControlPanel";
 import PageHeader from "../components/dashboard/PageHeader";
 import Readout from "../components/dashboard/Readout";
-import { CardSkeleton } from "../components/ui/StateViews";
+import { CardSkeleton, EmptyState } from "../components/ui/StateViews";
 import useDeviceControl from "../hooks/useDeviceControl";
 import { useTelemetry } from "../context/TelemetryContext";
+import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 import { derivePumpReasoning, deriveSafetyChecks } from "../utils/pumpReasoning";
 import { formatPercentage } from "../utils/telemetryFormat";
@@ -16,8 +17,9 @@ const CHECK_ICONS = {
 };
 
 export default function PumpControlPage() {
-  const { reading, isOnline, isStale, isLoading, socketConnected, lastUpdatedAt } =
+  const { reading, device, isOnline, isStale, isLoading, socketConnected, lastUpdatedAt } =
     useTelemetry();
+  const { isAdmin } = useAuth();
   const {
     controlState,
     loading: controlLoading,
@@ -48,7 +50,14 @@ export default function PumpControlPage() {
         lastUpdatedAt={lastUpdatedAt}
       />
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      {!isLoading && !device && !isAdmin ? (
+        <EmptyState
+          icon={Cpu}
+          title={t("noDeviceAssignedTitle")}
+          description={t("noDeviceAssignedDesc")}
+        />
+      ) : (
+        <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
           {controlLoading ? (
             <CardSkeleton rows={6} />
@@ -222,6 +231,7 @@ export default function PumpControlPage() {
           </article>
         </div>
       </div>
+      )}
     </div>
   );
 }

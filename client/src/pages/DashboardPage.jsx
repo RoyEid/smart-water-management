@@ -1,4 +1,4 @@
-import { Droplets, FlaskConical, Ruler, Waves } from "lucide-react";
+import { Cpu, Droplets, FlaskConical, Ruler, Waves } from "lucide-react";
 import AlertsPanel from "../components/dashboard/AlertsPanel";
 import AutoControlReasonCard from "../components/dashboard/AutoControlReasonCard";
 import MetricCard from "../components/dashboard/MetricCard";
@@ -8,10 +8,11 @@ import TankVisual from "../components/dashboard/TankVisual";
 import WaterFlowCard from "../components/dashboard/WaterFlowCard";
 import WaterLevelChart from "../components/dashboard/WaterLevelChart";
 import WaterTransferVisual from "../components/dashboard/WaterTransferVisual";
-import { CardSkeleton, ErrorState, OfflineState } from "../components/ui/StateViews";
+import { CardSkeleton, EmptyState, ErrorState, OfflineState } from "../components/ui/StateViews";
 import useDeviceControl from "../hooks/useDeviceControl";
 import useAlerts from "../hooks/useAlerts";
 import { useTelemetry } from "../context/TelemetryContext";
+import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 import {
   formatNumber,
@@ -24,6 +25,7 @@ export default function DashboardPage() {
   const {
     reading,
     readings,
+    device,
     tanks,
     isOnline,
     isStale,
@@ -33,6 +35,7 @@ export default function DashboardPage() {
     lastUpdatedAt,
     retry,
   } = useTelemetry();
+  const { isAdmin } = useAuth();
   const { controlState, updating, setAllowPumpOnMoteur } = useDeviceControl();
   const { alerts, isLoading: alertsLoading } = useAlerts();
   const { t, language } = useLanguage();
@@ -70,126 +73,134 @@ export default function DashboardPage() {
           <CardSkeleton rows={4} />
           <CardSkeleton rows={4} />
         </div>
+      ) : !device && !isAdmin ? (
+        <EmptyState
+          icon={Cpu}
+          title={t("noDeviceAssignedTitle")}
+          description={t("noDeviceAssignedDesc")}
+        />
       ) : (
-        <section className="space-y-4">
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <TankVisual
-              title={t("upperTank")}
-              subtitle={t("destinationReservoir")}
-              tank={upperTank}
-              tankCapacity={upperCapacity}
+        <>
+          <section className="space-y-4">
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              <TankVisual
+                title={t("upperTank")}
+                subtitle={t("destinationReservoir")}
+                tank={upperTank}
+                tankCapacity={upperCapacity}
+                pumpStatus={reading?.pumpStatus}
+                isOnline={isOnline}
+                isStale={isStale}
+                lastUpdatedText={lastUpdatedText}
+                accent="cyan"
+              />
+
+              <TankVisual
+                title={t("lowerTank")}
+                subtitle={t("sourceReservoir")}
+                tank={lowerTank}
+                tankCapacity={lowerCapacity}
+                pumpStatus={reading?.pumpStatus}
+                isOnline={isOnline}
+                isStale={isStale}
+                lastUpdatedText={lastUpdatedText}
+                accent="indigo"
+              />
+            </div>
+
+            <WaterTransferVisual
               pumpStatus={reading?.pumpStatus}
+              pumpMode={controlState.pumpMode ?? reading?.pumpMode}
               isOnline={isOnline}
-              isStale={isStale}
-              lastUpdatedText={lastUpdatedText}
+            />
+          </section>
+
+          <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <AutoControlReasonCard
+              reading={reading}
+              controlState={controlState}
+              isOnline={isOnline}
+            />
+            <AlertsPanel alerts={alerts} isLoading={alertsLoading} />
+          </section>
+
+          {/* Levels, distances and derived volumes. Every one of these renders an
+              explicit placeholder when the device has not reported it. */}
+          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <MetricCard
+              icon={Droplets}
+              label={t("upperTankLevel")}
+              formatted={formatPercentage(upperTank?.percentage)}
+              detail={t("destinationReservoir")}
               accent="cyan"
             />
-
-            <TankVisual
-              title={t("lowerTank")}
-              subtitle={t("sourceReservoir")}
-              tank={lowerTank}
-              tankCapacity={lowerCapacity}
-              pumpStatus={reading?.pumpStatus}
-              isOnline={isOnline}
-              isStale={isStale}
-              lastUpdatedText={lastUpdatedText}
+            <MetricCard
+              icon={Waves}
+              label={t("lowerTankLevel")}
+              formatted={formatPercentage(lowerTank?.percentage)}
+              detail={t("sourceReservoir")}
               accent="indigo"
             />
-          </div>
+            <MetricCard
+              icon={Ruler}
+              label={t("upperDistance")}
+              formatted={formatNumber(upperTank?.distanceCm, { decimals: 1, unit: "cm" })}
+              detail={t("sensorToSurface")}
+              accent="blue"
+            />
+            <MetricCard
+              icon={Ruler}
+              label={t("lowerDistance")}
+              formatted={formatNumber(lowerTank?.distanceCm, { decimals: 1, unit: "cm" })}
+              detail={t("sensorToSurface")}
+              accent="blue"
+            />
+          </section>
 
-          <WaterTransferVisual
-            pumpStatus={reading?.pumpStatus}
-            pumpMode={controlState.pumpMode ?? reading?.pumpMode}
-            isOnline={isOnline}
-          />
-        </section>
+          <section className="grid gap-4 sm:grid-cols-2">
+            <MetricCard
+              icon={FlaskConical}
+              label={t("upperTankVolume")}
+              formatted={formatVolume(upperTank?.percentage, { capacityLiters: upperCapacity })}
+              detail={
+                upperCapacity
+                  ? `${t("destinationReservoir")} (${Number(upperCapacity).toLocaleString()} L)`
+                  : t("destinationReservoir")
+              }
+              accent="emerald"
+            />
+            <MetricCard
+              icon={FlaskConical}
+              label={t("lowerTankVolume")}
+              formatted={formatVolume(lowerTank?.percentage, { capacityLiters: lowerCapacity })}
+              detail={
+                lowerCapacity
+                  ? `${t("sourceReservoir")} (${Number(lowerCapacity).toLocaleString()} L)`
+                  : t("sourceReservoir")
+              }
+              accent="violet"
+            />
+          </section>
+
+          <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <PowerSourceCard
+              powerSource={reading?.powerSource}
+              allowPumpOnMoteur={controlState.allowPumpOnMoteur ?? reading?.allowPumpOnMoteur}
+              isOnline={isOnline}
+              updating={updating}
+              setAllowPumpOnMoteur={setAllowPumpOnMoteur}
+            />
+            <WaterFlowCard
+              waterFlowDetected={reading?.waterFlowDetected}
+              isOnline={isOnline}
+            />
+          </section>
+
+          <section>
+            <WaterLevelChart readings={readings} />
+          </section>
+        </>
       )}
-
-      <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <AutoControlReasonCard
-          reading={reading}
-          controlState={controlState}
-          isOnline={isOnline}
-        />
-        <AlertsPanel alerts={alerts} isLoading={alertsLoading} />
-      </section>
-
-      {/* Levels, distances and derived volumes. Every one of these renders an
-          explicit placeholder when the device has not reported it. */}
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          icon={Droplets}
-          label={t("upperTankLevel")}
-          formatted={formatPercentage(upperTank?.percentage)}
-          detail={t("destinationReservoir")}
-          accent="cyan"
-        />
-        <MetricCard
-          icon={Waves}
-          label={t("lowerTankLevel")}
-          formatted={formatPercentage(lowerTank?.percentage)}
-          detail={t("sourceReservoir")}
-          accent="indigo"
-        />
-        <MetricCard
-          icon={Ruler}
-          label={t("upperDistance")}
-          formatted={formatNumber(upperTank?.distanceCm, { decimals: 1, unit: "cm" })}
-          detail={t("sensorToSurface")}
-          accent="blue"
-        />
-        <MetricCard
-          icon={Ruler}
-          label={t("lowerDistance")}
-          formatted={formatNumber(lowerTank?.distanceCm, { decimals: 1, unit: "cm" })}
-          detail={t("sensorToSurface")}
-          accent="blue"
-        />
-      </section>
-
-      <section className="grid gap-4 sm:grid-cols-2">
-        <MetricCard
-          icon={FlaskConical}
-          label={t("upperTankVolume")}
-          formatted={formatVolume(upperTank?.percentage, { capacityLiters: upperCapacity })}
-          detail={
-            upperCapacity
-              ? `${t("destinationReservoir")} (${Number(upperCapacity).toLocaleString()} L)`
-              : t("destinationReservoir")
-          }
-          accent="emerald"
-        />
-        <MetricCard
-          icon={FlaskConical}
-          label={t("lowerTankVolume")}
-          formatted={formatVolume(lowerTank?.percentage, { capacityLiters: lowerCapacity })}
-          detail={
-            lowerCapacity
-              ? `${t("sourceReservoir")} (${Number(lowerCapacity).toLocaleString()} L)`
-              : t("sourceReservoir")
-          }
-          accent="violet"
-        />
-      </section>
-
-      <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <PowerSourceCard
-          powerSource={reading?.powerSource}
-          allowPumpOnMoteur={controlState.allowPumpOnMoteur ?? reading?.allowPumpOnMoteur}
-          isOnline={isOnline}
-          updating={updating}
-          setAllowPumpOnMoteur={setAllowPumpOnMoteur}
-        />
-        <WaterFlowCard
-          waterFlowDetected={reading?.waterFlowDetected}
-          isOnline={isOnline}
-        />
-      </section>
-
-      <section>
-        <WaterLevelChart readings={readings} />
-      </section>
     </div>
   );
 }

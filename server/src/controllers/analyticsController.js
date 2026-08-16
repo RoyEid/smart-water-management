@@ -1,3 +1,4 @@
+import Device from "../models/Device.js";
 import { getAnalyticsOverview } from "../services/analyticsService.js";
 
 /**
@@ -8,15 +9,65 @@ export async function getAnalytics(req, res, next) {
     const query = req.validatedQuery ?? req.query;
     const params = req.validatedParams ?? req.params;
 
-    const deviceId = params.deviceId || query.deviceId || "tank-01";
     const range = query.range || "24h";
     const from = query.from;
     const to = query.to;
+    let effectiveFrom = from;
+    let targetDeviceId = params.deviceId || query.deviceId;
+
+    if (req.user?.role === "user") {
+      const ownedDevices = await Device.find({ owner: req.user._id })
+        .select("deviceId ownerAssignedAt")
+        .lean();
+
+      if (ownedDevices.length === 0) {
+        return res.status(200).json({
+          success: true,
+          analytics: null,
+          message: "No device assigned.",
+        });
+      }
+
+      if (targetDeviceId) {
+        const owned = ownedDevices.find((d) => d.deviceId === targetDeviceId);
+        if (!owned) {
+          const error = new Error("You are not authorized to view analytics for this device.");
+          error.statusCode = 403;
+          return next(error);
+        }
+        if (owned.ownerAssignedAt) {
+          if (!effectiveFrom || new Date(effectiveFrom) < new Date(owned.ownerAssignedAt)) {
+            effectiveFrom = owned.ownerAssignedAt.toISOString();
+          }
+        }
+      } else {
+        const owned = ownedDevices[0];
+        targetDeviceId = owned.deviceId;
+        if (owned.ownerAssignedAt) {
+          if (!effectiveFrom || new Date(effectiveFrom) < new Date(owned.ownerAssignedAt)) {
+            effectiveFrom = owned.ownerAssignedAt.toISOString();
+          }
+        }
+      }
+    } else {
+      // Admin path
+      if (!targetDeviceId) {
+        const first = await Device.findOne().select("deviceId").lean();
+        targetDeviceId = first?.deviceId;
+      }
+      if (!targetDeviceId) {
+        return res.status(200).json({
+          success: true,
+          analytics: null,
+          message: "No devices found.",
+        });
+      }
+    }
 
     const analytics = await getAnalyticsOverview({
-      deviceId,
+      deviceId: targetDeviceId,
       range,
-      from,
+      from: effectiveFrom,
       to,
     });
 

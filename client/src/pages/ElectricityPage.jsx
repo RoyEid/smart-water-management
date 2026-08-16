@@ -2,9 +2,10 @@ import { Info, ShieldAlert, Cpu } from "lucide-react";
 import PageHeader from "../components/dashboard/PageHeader";
 import PowerSourceCard from "../components/dashboard/PowerSourceCard";
 import WaterTransferVisual from "../components/dashboard/WaterTransferVisual";
-import { ErrorState, OfflineState } from "../components/ui/StateViews";
+import { EmptyState, ErrorState, OfflineState } from "../components/ui/StateViews";
 import useDeviceControl from "../hooks/useDeviceControl";
 import { useTelemetry } from "../context/TelemetryContext";
+import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 
 /**
@@ -12,8 +13,9 @@ import { useLanguage } from "../context/LanguageContext";
  * Provides real-time Dawle / Moteur detection telemetry and generator pump permissions.
  */
 export default function ElectricityPage() {
-  const { reading, isOnline, isStale, error, socketConnected, lastUpdatedAt, retry } =
+  const { reading, device, isOnline, isStale, isLoading, error, socketConnected, lastUpdatedAt, retry } =
     useTelemetry();
+  const { isAdmin } = useAuth();
   const { controlState, updating, setAllowPumpOnMoteur } = useDeviceControl();
   const { t } = useLanguage();
 
@@ -36,6 +38,15 @@ export default function ElectricityPage() {
       {isStale && !error && (
         <OfflineState message={t("staleDataNotice")} onRetry={retry} retryLabel={t("retry")} />
       )}
+
+      {!isLoading && !device && !isAdmin ? (
+        <EmptyState
+          icon={Cpu}
+          title={t("noDeviceAssignedTitle")}
+          description={t("noDeviceAssignedDesc")}
+        />
+      ) : (
+        <>
 
       {/* Primary Electricity Source & Permission Control Card */}
       <section>
@@ -91,6 +102,8 @@ export default function ElectricityPage() {
           The voltage detection sensor is dedicated exclusively to verifying Dawle grid presence. Water monitoring and tank telemetry remain 100% active on all power sources.
         </span>
       </div>
+      </>
+      )}
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import Alert from "../models/Alert.js";
+import Device from "../models/Device.js";
 
 function serializeAlert(alert) {
   return {
@@ -17,6 +18,30 @@ function serializeAlert(alert) {
   };
 }
 
+function buildUserAlertScope(ownedDevices, specificDeviceId = null) {
+  if (ownedDevices.length === 0) return { _id: null };
+
+  if (specificDeviceId) {
+    const target = ownedDevices.find((d) => d.deviceId === specificDeviceId);
+    if (!target) return { _id: null };
+    if (!target.ownerAssignedAt) return { deviceId: target.deviceId };
+    return {
+      deviceId: target.deviceId,
+      $or: [{ isResolved: false }, { firstSeenAt: { $gte: target.ownerAssignedAt } }],
+    };
+  }
+
+  return {
+    $or: ownedDevices.map((d) => {
+      if (!d.ownerAssignedAt) return { deviceId: d.deviceId };
+      return {
+        deviceId: d.deviceId,
+        $or: [{ isResolved: false }, { firstSeenAt: { $gte: d.ownerAssignedAt } }],
+      };
+    }),
+  };
+}
+
 export async function listAlerts(req, res, next) {
   try {
     const query = req.validatedQuery ?? req.query;
@@ -30,6 +55,42 @@ export async function listAlerts(req, res, next) {
     if (state === "active") filter.isResolved = false;
     if (state === "resolved") filter.isResolved = true;
 
+    let unreadFilter = { isRead: false };
+    let activeFilter = { isResolved: false };
+
+    if (req.user?.role === "user") {
+      const ownedDevices = await Device.find({ owner: req.user._id })
+        .select("deviceId ownerAssignedAt")
+        .lean();
+
+      if (ownedDevices.length === 0) {
+        return res.status(200).json({
+          success: true,
+          alerts: [],
+          counts: { unread: 0, active: 0 },
+          pagination: {
+            page,
+            limit,
+            total: 0,
+            totalPages: 1,
+            hasNextPage: false,
+            hasPreviousPage: false,
+          },
+        });
+      }
+
+      if (deviceId && !ownedDevices.some((d) => d.deviceId === deviceId)) {
+        const error = new Error("You are not authorized to view alerts for this device.");
+        error.statusCode = 403;
+        return next(error);
+      }
+
+      const scope = buildUserAlertScope(ownedDevices, deviceId);
+      Object.assign(filter, scope);
+      unreadFilter = { isRead: false, ...scope };
+      activeFilter = { isResolved: false, ...scope };
+    }
+
     const [alerts, total, unreadCount, activeCount] = await Promise.all([
       Alert.find(filter)
         .sort({ lastSeenAt: -1 })
@@ -37,10 +98,8 @@ export async function listAlerts(req, res, next) {
         .limit(limit)
         .lean(),
       Alert.countDocuments(filter),
-      // Counts are for the whole collection, not the filtered page — the bell
-      // badge must not change just because the user filtered the list.
-      Alert.countDocuments({ isRead: false }),
-      Alert.countDocuments({ isResolved: false }),
+      Alert.countDocuments(unreadFilter),
+      Alert.countDocuments(activeFilter),
     ]);
 
     res.status(200).json({
@@ -68,9 +127,30 @@ export async function listAlerts(req, res, next) {
  */
 export async function getRecentAlerts(req, res, next) {
   try {
+    let filter = {};
+    let unreadFilter = { isRead: false };
+
+    if (req.user?.role === "user") {
+      const ownedDevices = await Device.find({ owner: req.user._id })
+        .select("deviceId ownerAssignedAt")
+        .lean();
+
+      if (ownedDevices.length === 0) {
+        return res.status(200).json({
+          success: true,
+          alerts: [],
+          unreadCount: 0,
+        });
+      }
+
+      const scope = buildUserAlertScope(ownedDevices);
+      filter = scope;
+      unreadFilter = { isRead: false, ...scope };
+    }
+
     const [alerts, unreadCount] = await Promise.all([
-      Alert.find({}).sort({ lastSeenAt: -1 }).limit(8).lean(),
-      Alert.countDocuments({ isRead: false }),
+      Alert.find(filter).sort({ lastSeenAt: -1 }).limit(8).lean(),
+      Alert.countDocuments(unreadFilter),
     ]);
 
     res.status(200).json({
@@ -93,10 +173,26 @@ export async function markAlertRead(req, res, next) {
       return next(error);
     }
 
+    let unreadFilter = { isRead: false };
+    if (req.user?.role === "user") {
+      const ownedDevices = await Device.find({ owner: req.user._id })
+        .select("deviceId ownerAssignedAt")
+        .lean();
+
+      const target = ownedDevices.find((d) => d.deviceId === alert.deviceId);
+      if (!target) {
+        const error = new Error("You are not authorized to manage alerts for this device.");
+        error.statusCode = 403;
+        return next(error);
+      }
+      const scope = buildUserAlertScope(ownedDevices);
+      unreadFilter = { isRead: false, ...scope };
+    }
+
     alert.isRead = true;
     await alert.save();
 
-    const unreadCount = await Alert.countDocuments({ isRead: false });
+    const unreadCount = await Alert.countDocuments(unreadFilter);
 
     res.status(200).json({
       success: true,
@@ -110,8 +206,26 @@ export async function markAlertRead(req, res, next) {
 
 export async function markAllAlertsRead(req, res, next) {
   try {
+    let filter = { isRead: false };
+    if (req.user?.role === "user") {
+      const ownedDevices = await Device.find({ owner: req.user._id })
+        .select("deviceId ownerAssignedAt")
+        .lean();
+
+      if (ownedDevices.length === 0) {
+        return res.status(200).json({
+          success: true,
+          message: "0 alert(s) marked as read.",
+          updated: 0,
+          unreadCount: 0,
+        });
+      }
+
+      filter = { isRead: false, ...buildUserAlertScope(ownedDevices) };
+    }
+
     const result = await Alert.updateMany(
-      { isRead: false },
+      filter,
       { $set: { isRead: true } }
     );
 

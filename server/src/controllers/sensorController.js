@@ -1,8 +1,11 @@
+import Device from "../models/Device.js";
+import UltrasonicReading from "../models/UltrasonicReading.js";
 import {
   getLatestReading,
   saveLatestReading,
 } from "../services/ultrasonicReadingService.js";
 import { emitUltrasonicReading } from "../realtime/socketServer.js";
+import { serializeStoredReading } from "./deviceController.js";
 
 export function receiveUltrasonicReading(req, res) {
   const reading = saveLatestReading(req.body);
@@ -22,16 +25,64 @@ export function receiveUltrasonicReading(req, res) {
   });
 }
 
-export function getLatestUltrasonicReading(req, res) {
-  const reading = getLatestReading();
+export async function getLatestUltrasonicReading(req, res, next) {
+  try {
+    // 1. Normal User Role Scoping
+    if (req.user?.role === "user") {
+      const ownedDevices = await Device.find({ owner: req.user._id })
+        .select("deviceId ownerAssignedAt")
+        .lean();
 
-  if (!reading) {
-    return res.status(200).json({
-      success: true,
-      message: "No ultrasonic reading has been received yet.",
-      reading: null,
-    });
+      if (ownedDevices.length === 0) {
+        return res.status(200).json(null);
+      }
+
+      let targetDeviceId = req.query?.deviceId;
+      if (targetDeviceId) {
+        if (!ownedDevices.some((d) => d.deviceId === targetDeviceId)) {
+          const error = new Error("You are not authorized to view telemetry for this device.");
+          error.statusCode = 403;
+          return next(error);
+        }
+      } else {
+        targetDeviceId = ownedDevices[0].deviceId;
+      }
+
+      const memoryReading = getLatestReading(targetDeviceId);
+      if (memoryReading) {
+        return res.status(200).json(memoryReading);
+      }
+
+      const lastStored = await UltrasonicReading.findOne({ deviceId: targetDeviceId })
+        .sort({ receivedAt: -1 })
+        .lean();
+
+      if (lastStored) {
+        return res.status(200).json(serializeStoredReading(lastStored));
+      }
+
+      return res.status(200).json(null);
+    }
+
+    // 2. Admin Role Scoping
+    if (req.query?.deviceId) {
+      const targetDeviceId = req.query.deviceId;
+      const memoryReading = getLatestReading(targetDeviceId);
+      if (memoryReading) {
+        return res.status(200).json(memoryReading);
+      }
+      const lastStored = await UltrasonicReading.findOne({ deviceId: targetDeviceId })
+        .sort({ receivedAt: -1 })
+        .lean();
+      if (lastStored) {
+        return res.status(200).json(serializeStoredReading(lastStored));
+      }
+      return res.status(200).json(null);
+    }
+
+    const memoryReading = getLatestReading();
+    return res.status(200).json(memoryReading || null);
+  } catch (error) {
+    next(error);
   }
-
-  return res.status(200).json(reading);
 }

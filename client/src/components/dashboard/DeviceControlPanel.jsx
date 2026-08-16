@@ -4,11 +4,13 @@ import {
   CircleAlert,
   LoaderCircle,
   Power,
+  ShieldAlert,
   Sliders,
   XCircle,
   Zap,
 } from "lucide-react";
 import ConfirmDialog from "../ui/ConfirmDialog";
+import { useAuth } from "../../context/AuthContext";
 import { useLanguage } from "../../context/LanguageContext";
 import { useToast } from "../../context/ToastContext";
 import { canCommandManualOn } from "../../utils/pumpReasoning";
@@ -35,6 +37,7 @@ export default function DeviceControlPanel({
   setManualPumpState,
   setAllowPumpOnMoteur,
 }) {
+  const { isAdmin } = useAuth();
   const { t, language } = useLanguage();
   const toast = useToast();
   const [pendingConfirm, setPendingConfirm] = useState(null);
@@ -48,7 +51,8 @@ export default function DeviceControlPanel({
 
   // A control that has not loaded yet must not be clickable: acting on an
   // unknown current state can send the opposite of what the user intends.
-  const controlsBusy = updating || loading;
+  // When viewed by an admin, all physical actuators are read-only.
+  const controlsBusy = updating || loading || isAdmin;
 
   const runCommand = async (command, successKey) => {
     const result = await command();
@@ -91,6 +95,19 @@ export default function DeviceControlPanel({
         >
           <CircleAlert size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
           <span className="min-w-0 break-words">{error}</span>
+        </div>
+      )}
+
+      {/* Admin Read-Only Notice */}
+      {isAdmin && (
+        <div className="mt-4 flex items-start gap-3 rounded-2xl bg-amber-50/80 dark:bg-amber-950/40 p-4 text-xs font-semibold text-amber-800 dark:text-amber-300 ring-1 ring-amber-200 dark:ring-amber-800/60">
+          <ShieldAlert size={18} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+          <div>
+            <p className="font-extrabold">{t("adminReadOnlyTitle") || "Administrator View (Read-Only)"}</p>
+            <p className="mt-0.5 text-[11px] opacity-90">
+              {t("adminReadOnlyNotice") || "Physical pump controls and operational modes are restricted to the assigned installation user."}
+            </p>
+          </div>
         </div>
       )}
 

@@ -1,35 +1,47 @@
 import DeviceControlState from "../models/DeviceControlState.js";
 import Device from "../models/Device.js";
 
-const DEFAULT_DEVICE_ID = "tank-01";
-
-// Authoritative copy. The ESP32 polls the control endpoint every 2 s, so this
+// Authoritative copies by deviceId. The ESP32 polls the control endpoint every 2 s, so this
 // read must never wait on MongoDB; the database holds a durable mirror that is
 // only consulted at boot.
-let deviceControlState = {
-  systemEnabled: true,
-  pumpMode: "AUTO", // "AUTO" | "MANUAL"
-  manualPumpState: "OFF", // "ON" | "OFF"
-  allowPumpOnMoteur: false, // boolean: explicit user permission to operate pump on generator
-  updatedAt: new Date(),
-};
+const deviceControlStatesByDevice = new Map();
 
-function serializeState() {
+function defaultState(deviceId = "tank-01") {
   return {
-    systemEnabled: deviceControlState.systemEnabled,
-    pumpMode: deviceControlState.pumpMode,
-    manualPumpState: deviceControlState.manualPumpState,
-    allowPumpOnMoteur: Boolean(deviceControlState.allowPumpOnMoteur),
-    updatedAt: deviceControlState.updatedAt.toISOString(),
+    deviceId,
+    systemEnabled: true,
+    pumpMode: "AUTO", // "AUTO" | "MANUAL"
+    manualPumpState: "OFF", // "ON" | "OFF"
+    allowPumpOnMoteur: false, // boolean: explicit user permission to operate pump on generator
+    updatedAt: new Date(),
   };
 }
 
-export function getDeviceControlState() {
-  return serializeState();
+function serializeState(state) {
+  return {
+    deviceId: state.deviceId,
+    systemEnabled: state.systemEnabled,
+    pumpMode: state.pumpMode,
+    manualPumpState: state.manualPumpState,
+    allowPumpOnMoteur: Boolean(state.allowPumpOnMoteur),
+    updatedAt: state.updatedAt instanceof Date ? state.updatedAt.toISOString() : new Date(state.updatedAt).toISOString(),
+  };
 }
 
-export async function getDeviceControlStateAsync(deviceId = DEFAULT_DEVICE_ID) {
-  const base = serializeState();
+function getInternalState(deviceId = "tank-01") {
+  const key = deviceId || "tank-01";
+  if (!deviceControlStatesByDevice.has(key)) {
+    deviceControlStatesByDevice.set(key, defaultState(key));
+  }
+  return deviceControlStatesByDevice.get(key);
+}
+
+export function getDeviceControlState(deviceId = "tank-01") {
+  return serializeState(getInternalState(deviceId));
+}
+
+export async function getDeviceControlStateAsync(deviceId = "tank-01") {
+  const base = serializeState(getInternalState(deviceId));
   try {
     const device = await Device.findOne({ deviceId }).lean();
     return {
@@ -50,12 +62,25 @@ export async function getDeviceControlStateAsync(deviceId = DEFAULT_DEVICE_ID) {
   }
 }
 
-export function setDeviceControlState(updates = {}) {
+export function setDeviceControlState(deviceIdOrUpdates = {}, maybeUpdates = null) {
+  let deviceId = "tank-01";
+  let updates = {};
+
+  if (typeof deviceIdOrUpdates === "string") {
+    deviceId = deviceIdOrUpdates || "tank-01";
+    updates = maybeUpdates || {};
+  } else if (deviceIdOrUpdates && typeof deviceIdOrUpdates === "object") {
+    updates = deviceIdOrUpdates;
+    deviceId = updates.deviceId || "tank-01";
+  }
+
+  const currentState = getInternalState(deviceId);
   let changed = false;
 
   const nextState = {
-    ...deviceControlState,
+    ...currentState,
     ...updates,
+    deviceId,
   };
 
   // Safety rule (unchanged): disabling the system forces the manual command
@@ -67,19 +92,19 @@ export function setDeviceControlState(updates = {}) {
   }
 
   if (
-    nextState.systemEnabled !== deviceControlState.systemEnabled ||
-    nextState.pumpMode !== deviceControlState.pumpMode ||
-    nextState.manualPumpState !== deviceControlState.manualPumpState ||
-    nextState.allowPumpOnMoteur !== deviceControlState.allowPumpOnMoteur
+    nextState.systemEnabled !== currentState.systemEnabled ||
+    nextState.pumpMode !== currentState.pumpMode ||
+    nextState.manualPumpState !== currentState.manualPumpState ||
+    nextState.allowPumpOnMoteur !== currentState.allowPumpOnMoteur
   ) {
     changed = true;
     nextState.updatedAt = new Date();
-    deviceControlState = nextState;
-    persistState();
+    deviceControlStatesByDevice.set(deviceId, nextState);
+    persistState(deviceId);
   }
 
   return {
-    state: serializeState(),
+    state: serializeState(getInternalState(deviceId)),
     changed,
   };
 }
@@ -89,21 +114,22 @@ export function setDeviceControlState(updates = {}) {
  * failure degrades restart durability only — it must never turn a successful
  * control command into an error for the dashboard or the device.
  */
-function persistState() {
+function persistState(deviceId = "tank-01") {
+  const state = getInternalState(deviceId);
   DeviceControlState.findOneAndUpdate(
-    { deviceId: DEFAULT_DEVICE_ID },
+    { deviceId },
     {
       $set: {
-        systemEnabled: deviceControlState.systemEnabled,
-        pumpMode: deviceControlState.pumpMode,
-        manualPumpState: deviceControlState.manualPumpState,
-        allowPumpOnMoteur: deviceControlState.allowPumpOnMoteur,
-        updatedAt: deviceControlState.updatedAt,
+        systemEnabled: state.systemEnabled,
+        pumpMode: state.pumpMode,
+        manualPumpState: state.manualPumpState,
+        allowPumpOnMoteur: state.allowPumpOnMoteur,
+        updatedAt: state.updatedAt,
       },
     },
     { upsert: true }
   ).catch((error) => {
-    console.error("[Device Control] Failed to persist state:", error.message);
+    console.error(`[Device Control] Failed to persist state for ${deviceId}:`, error.message);
   });
 }
 
@@ -116,34 +142,31 @@ function persistState() {
  */
 export async function hydrateDeviceControlState() {
   try {
-    const stored = await DeviceControlState.findOne({
-      deviceId: DEFAULT_DEVICE_ID,
-    }).lean();
+    const storedList = await DeviceControlState.find({}).lean();
 
-    if (!stored) {
+    if (!storedList || storedList.length === 0) {
       console.log("[Device Control] No stored state; using safe defaults.");
-      return serializeState();
+      return serializeState(getInternalState("tank-01"));
     }
 
-    deviceControlState = {
-      systemEnabled: stored.systemEnabled !== false,
-      pumpMode: stored.pumpMode === "MANUAL" ? "MANUAL" : "AUTO",
-      // A restart is not an instruction to run the pump. Any manual ON is
-      // deliberately dropped so the hardware comes back in its safe state and
-      // the operator has to re-issue the command.
-      manualPumpState: "OFF",
-      // Moteur permission is always reset to false on restart for safety.
-      allowPumpOnMoteur: false,
-      updatedAt: stored.updatedAt ? new Date(stored.updatedAt) : new Date(),
-    };
+    for (const stored of storedList) {
+      const devId = stored.deviceId || "tank-01";
+      deviceControlStatesByDevice.set(devId, {
+        deviceId: devId,
+        systemEnabled: stored.systemEnabled !== false,
+        pumpMode: stored.pumpMode === "MANUAL" ? "MANUAL" : "AUTO",
+        manualPumpState: "OFF",
+        allowPumpOnMoteur: false,
+        updatedAt: stored.updatedAt ? new Date(stored.updatedAt) : new Date(),
+      });
+      console.log(
+        `[Device Control] Restored ${devId}: system ${stored.systemEnabled !== false ? "ENABLED" : "DISABLED"}, mode ${stored.pumpMode || "AUTO"}, manual reset to OFF, Moteur permission reset to false.`
+      );
+    }
 
-    console.log(
-      `[Device Control] Restored: system ${deviceControlState.systemEnabled ? "ENABLED" : "DISABLED"}, mode ${deviceControlState.pumpMode}, manual reset to OFF, Moteur permission reset to false.`
-    );
-
-    return serializeState();
+    return serializeState(getInternalState("tank-01"));
   } catch (error) {
     console.error("[Device Control] Failed to restore state:", error.message);
-    return serializeState();
+    return serializeState(getInternalState("tank-01"));
   }
 }

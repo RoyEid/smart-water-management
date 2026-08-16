@@ -5,7 +5,7 @@ import { useLanguage } from "../../context/LanguageContext";
 
 export default function TopHeader({
   pageTitle = "Dashboard",
-  deviceId = "tank-01",
+  deviceId = null,
   isOnline = false,
   onOpenMobileMenu,
 }) {
@@ -57,6 +57,24 @@ export default function TopHeader({
  */
 function DeviceStatusLine({ deviceId, isOnline, className = "", emphasised = false }) {
   const { t } = useLanguage();
+
+  if (!deviceId) {
+    return (
+      <div
+        className={`items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400 ${
+          className.includes("hidden") ? className : `flex ${className}`
+        }`}
+      >
+        <span
+          className={`rounded-md bg-slate-100 px-1.5 py-0.5 font-medium text-slate-600 ring-1 ring-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700 ${
+            emphasised ? "px-2 text-[11px]" : "text-[10px]"
+          }`}
+        >
+          {t("noDeviceAssigned")}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div

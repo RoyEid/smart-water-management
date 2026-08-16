@@ -1,4 +1,5 @@
 import UltrasonicReading from "../models/UltrasonicReading.js";
+import Device from "../models/Device.js";
 import { touchDevice } from "./deviceService.js";
 import { syncAlerts } from "./alertService.js";
 import {
@@ -9,9 +10,9 @@ import { emitDeviceControlChanged } from "../realtime/socketServer.js";
 
 const ONLINE_WINDOW_MS = 10_000;
 
-// Kept in memory so the dashboard and the ESP32 response path never wait on
+// Kept in memory by deviceId so the dashboard and the ESP32 response path never wait on
 // (or fail because of) MongoDB. Mongo is the durable copy, this is the hot one.
-let latestReading = null;
+const latestReadingsByDevice = new Map();
 
 function toTank(source, fallbackStatus) {
   return {
@@ -106,14 +107,16 @@ function normalizeWaterFlowDetected(value) {
 }
 
 export function saveLatestReading(payload) {
-  const previousPowerSource = latestReading?.powerSource ?? null;
-  latestReading = normalizePayload(payload);
+  const reading = normalizePayload(payload);
+  const deviceId = reading.deviceId;
+  const previousPowerSource = latestReadingsByDevice.get(deviceId)?.powerSource ?? null;
+  latestReadingsByDevice.set(deviceId, reading);
 
   // Transition safety: when DAWLE -> MOTEUR transition occurs, reset any Moteur permission
-  if (previousPowerSource === "DAWLE" && latestReading.powerSource === "MOTEUR") {
-    const currentControl = getDeviceControlState();
+  if (previousPowerSource === "DAWLE" && reading.powerSource === "MOTEUR") {
+    const currentControl = getDeviceControlState(deviceId);
     if (currentControl.allowPumpOnMoteur) {
-      const { state } = setDeviceControlState({ allowPumpOnMoteur: false });
+      const { state } = setDeviceControlState(deviceId, { allowPumpOnMoteur: false });
       emitDeviceControlChanged(state);
     }
   }
@@ -121,11 +124,11 @@ export function saveLatestReading(payload) {
   // Persist without blocking the device response. A MongoDB problem must
   // degrade durability only — it must never turn a good reading into an error
   // for the ESP32 or stall the live dashboard update.
-  UltrasonicReading.create(latestReading).catch((error) => {
+  UltrasonicReading.create(reading).catch((error) => {
     console.error("[Ultrasonic] Failed to persist reading:", error.message);
   });
 
-  const serialized = serializeReading(latestReading);
+  const serialized = serializeReading(reading);
 
   // Registry and alerting are downstream consumers of the reading, held to the
   // same rule: both swallow their own failures so neither can turn a valid
@@ -136,12 +139,21 @@ export function saveLatestReading(payload) {
   return serialized;
 }
 
-export function getLatestReading() {
-  if (!latestReading) {
-    return null;
+export function getLatestReading(deviceId = null) {
+  if (deviceId) {
+    const reading = latestReadingsByDevice.get(deviceId);
+    return reading ? withOnlineStatus(serializeReading(reading)) : null;
   }
 
-  return withOnlineStatus(serializeReading(latestReading));
+  // If no specific device requested, find the newest reading across all devices (for global overview)
+  let newest = null;
+  for (const r of latestReadingsByDevice.values()) {
+    if (!newest || r.receivedAt > newest.receivedAt) {
+      newest = r;
+    }
+  }
+
+  return newest ? withOnlineStatus(serializeReading(newest)) : null;
 }
 
 /**
@@ -152,38 +164,40 @@ export function getLatestReading() {
  */
 export async function hydrateLatestReading() {
   try {
-    const stored = await UltrasonicReading.findOne()
-      .sort({ receivedAt: -1 })
-      .lean();
+    const deviceIds = await Device.find({}).distinct("deviceId");
+    const targets = deviceIds.length > 0 ? deviceIds : ["tank-01"];
 
-    if (!stored) {
-      console.log("[Ultrasonic] No stored readings found in MongoDB.");
-      return null;
+    for (const devId of targets) {
+      const stored = await UltrasonicReading.findOne({ deviceId: devId })
+        .sort({ receivedAt: -1 })
+        .lean();
+
+      if (stored) {
+        const restored = {
+          deviceId: stored.deviceId,
+          upperTank: toTank(stored.upperTank),
+          lowerTank: toTank(stored.lowerTank),
+          pumpStatus: stored.pumpStatus,
+          pumpRunning: stored.pumpRunning ?? stored.pumpStatus === "ON",
+          systemEnabled: stored.systemEnabled,
+          pumpMode: stored.pumpMode,
+          sensorStatus: stored.sensorStatus ?? null,
+          failedSensor: stored.failedSensor ?? null,
+          waterFlowDetected: normalizeWaterFlowDetected(stored.waterFlowDetected),
+          powerSource: normalizePowerSource(stored.powerSource),
+          allowPumpOnMoteur: false,
+          receivedAt: new Date(stored.receivedAt),
+        };
+        latestReadingsByDevice.set(devId, restored);
+        console.log(
+          `[Ultrasonic] Restored last reading for ${devId} from ${restored.receivedAt.toISOString()}`
+        );
+      }
     }
 
-    latestReading = {
-      deviceId: stored.deviceId,
-      upperTank: toTank(stored.upperTank),
-      lowerTank: toTank(stored.lowerTank),
-      pumpStatus: stored.pumpStatus,
-      pumpRunning: stored.pumpRunning ?? stored.pumpStatus === "ON",
-      systemEnabled: stored.systemEnabled,
-      pumpMode: stored.pumpMode,
-      sensorStatus: stored.sensorStatus ?? null,
-      failedSensor: stored.failedSensor ?? null,
-      waterFlowDetected: normalizeWaterFlowDetected(stored.waterFlowDetected),
-      powerSource: normalizePowerSource(stored.powerSource),
-      allowPumpOnMoteur: false,
-      receivedAt: new Date(stored.receivedAt),
-    };
-
-    console.log(
-      `[Ultrasonic] Restored last reading for ${stored.deviceId} from ${latestReading.receivedAt.toISOString()}`
-    );
-
-    return serializeReading(latestReading);
+    return getLatestReading();
   } catch (error) {
-    console.error("[Ultrasonic] Failed to restore last reading:", error.message);
+    console.error("[Ultrasonic] Failed to restore last readings:", error.message);
     return null;
   }
 }

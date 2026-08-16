@@ -1,10 +1,11 @@
-import { Droplets, Radio, Waves, Zap, ZapOff } from "lucide-react";
+import { Cpu, Droplets, Radio, Waves, Zap, ZapOff } from "lucide-react";
 import MetricCard from "../components/dashboard/MetricCard";
 import PageHeader from "../components/dashboard/PageHeader";
 import WaterLevelChart from "../components/dashboard/WaterLevelChart";
-import { CardSkeleton, ErrorState, OfflineState } from "../components/ui/StateViews";
+import { CardSkeleton, EmptyState, ErrorState, OfflineState } from "../components/ui/StateViews";
 import useDeviceControl from "../hooks/useDeviceControl";
 import { useTelemetry } from "../context/TelemetryContext";
+import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 import {
   formatNumber,
@@ -16,6 +17,7 @@ export default function LiveMonitoringPage() {
   const {
     reading,
     readings,
+    device,
     isOnline,
     isStale,
     isLoading,
@@ -24,6 +26,7 @@ export default function LiveMonitoringPage() {
     lastUpdatedAt,
     retry,
   } = useTelemetry();
+  const { isAdmin } = useAuth();
   const { controlState } = useDeviceControl();
   const { t, language } = useLanguage();
 
@@ -58,6 +61,12 @@ export default function LiveMonitoringPage() {
           <CardSkeleton rows={1} />
           <CardSkeleton rows={1} />
         </div>
+      ) : !device && !isAdmin ? (
+        <EmptyState
+          icon={Cpu}
+          title={t("noDeviceAssignedTitle")}
+          description={t("noDeviceAssignedDesc")}
+        />
       ) : (
         <>
           <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

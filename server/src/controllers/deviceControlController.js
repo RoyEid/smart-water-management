@@ -1,3 +1,4 @@
+import Device from "../models/Device.js";
 import {
   getDeviceControlState,
   getDeviceControlStateAsync,
@@ -9,7 +10,49 @@ import { AUDIT_ACTIONS } from "../models/AuditLog.js";
 
 export async function getDeviceControl(req, res, next) {
   try {
-    const deviceId = req.query?.deviceId || req.body?.deviceId || "tank-01";
+    // 1. Normal User Role Scoping
+    if (req.user?.role === "user") {
+      const ownedDevices = await Device.find({ owner: req.user._id })
+        .select("deviceId")
+        .lean();
+
+      if (ownedDevices.length === 0) {
+        return res.status(200).json({
+          success: true,
+          control: null,
+          message: "No device assigned.",
+        });
+      }
+
+      let targetDeviceId = req.query?.deviceId || req.body?.deviceId;
+      if (targetDeviceId) {
+        if (!ownedDevices.some((d) => d.deviceId === targetDeviceId)) {
+          const error = new Error("You are not authorized to view controls for this device.");
+          error.statusCode = 403;
+          return next(error);
+        }
+      } else {
+        targetDeviceId = ownedDevices[0].deviceId;
+      }
+
+      const control = await getDeviceControlStateAsync(targetDeviceId);
+      return res.status(200).json({
+        success: true,
+        control,
+        ...control,
+      });
+    }
+
+    // 2. Admin & Hardware Device-Key Path
+    let deviceId = req.device?.deviceId || req.query?.deviceId || req.body?.deviceId;
+    if (!deviceId && req.user?.role === "admin") {
+      const firstDevice = await Device.findOne().select("deviceId").lean();
+      deviceId = firstDevice?.deviceId;
+    }
+    if (!deviceId) {
+      deviceId = "tank-01";
+    }
+
     const control = await getDeviceControlStateAsync(deviceId);
     res.status(200).json({
       success: true,
@@ -21,28 +64,65 @@ export async function getDeviceControl(req, res, next) {
   }
 }
 
-export function updateDeviceControl(req, res) {
-  const previous = getDeviceControlState();
-  const { state, changed } = setDeviceControlState(req.body);
-
-  if (changed) {
-    emitDeviceControlChanged(state);
-    console.log(
-      `[Device Control] System ${state.systemEnabled ? "ENABLED" : "DISABLED"} | Mode: ${state.pumpMode} | Manual: ${state.manualPumpState} | Moteur Pump Permission: ${state.allowPumpOnMoteur ? "ALLOWED" : "BLOCKED"}`
-    );
-    // Only user-initiated changes are audited. The ESP32 authenticates with the
-    // device key and only ever reads this endpoint, so a device request never
-    // produces an entry attributed to a person.
-    if (req.user) {
-      auditControlChange(req, previous, state);
+export async function updateDeviceControl(req, res, next) {
+  try {
+    // STRICT RULE: Admins cannot operate physical controls!
+    if (req.user?.role === "admin") {
+      const error = new Error("Administrators are not permitted to operate physical device controls.");
+      error.statusCode = 403;
+      return next(error);
     }
-  }
 
-  res.status(200).json({
-    success: true,
-    control: state,
-    ...state,
-  });
+    let targetDeviceId = req.device?.deviceId || req.body?.deviceId || req.query?.deviceId;
+
+    if (req.user?.role === "user") {
+      const ownedDevices = await Device.find({ owner: req.user._id })
+        .select("deviceId")
+        .lean();
+
+      if (ownedDevices.length === 0) {
+        const error = new Error("You have no assigned device to operate.");
+        error.statusCode = 403;
+        return next(error);
+      }
+
+      if (!targetDeviceId) {
+        targetDeviceId = ownedDevices[0].deviceId;
+      } else if (!ownedDevices.some((d) => d.deviceId === targetDeviceId)) {
+        const error = new Error("You are not authorized to operate controls for this device.");
+        error.statusCode = 403;
+        return next(error);
+      }
+    }
+
+    if (!targetDeviceId) {
+      targetDeviceId = "tank-01";
+    }
+
+    const previous = getDeviceControlState(targetDeviceId);
+    const { state, changed } = setDeviceControlState(targetDeviceId, req.body);
+
+    if (changed) {
+      emitDeviceControlChanged(state);
+      console.log(
+        `[Device Control] ${targetDeviceId}: System ${state.systemEnabled ? "ENABLED" : "DISABLED"} | Mode: ${state.pumpMode} | Manual: ${state.manualPumpState} | Moteur Pump Permission: ${state.allowPumpOnMoteur ? "ALLOWED" : "BLOCKED"}`
+      );
+      // Only user-initiated changes are audited. The ESP32 authenticates with the
+      // device key and only ever reads this endpoint, so a device request never
+      // produces an entry attributed to a person.
+      if (req.user) {
+        auditControlChange(req, previous, state, targetDeviceId);
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      control: state,
+      ...state,
+    });
+  } catch (error) {
+    next(error);
+  }
 }
 
 /**
@@ -50,7 +130,7 @@ export function updateDeviceControl(req, res) {
  * turned the pump on" reads as two distinct, individually filterable actions
  * rather than one opaque "control updated".
  */
-function auditControlChange(req, previous, next) {
+function auditControlChange(req, previous, next, targetDeviceId = "tank-01") {
   if (previous.systemEnabled !== next.systemEnabled) {
     recordAudit({
       req,
@@ -58,7 +138,8 @@ function auditControlChange(req, previous, next) {
         ? AUDIT_ACTIONS.SYSTEM_ENABLED
         : AUDIT_ACTIONS.SYSTEM_DISABLED,
       targetType: "device",
-      targetId: "tank-01",
+      targetId: targetDeviceId,
+      targetLabel: targetDeviceId,
       metadata: { systemEnabled: next.systemEnabled },
     });
   }
@@ -68,7 +149,8 @@ function auditControlChange(req, previous, next) {
       req,
       action: AUDIT_ACTIONS.PUMP_MODE_CHANGED,
       targetType: "device",
-      targetId: "tank-01",
+      targetId: targetDeviceId,
+      targetLabel: targetDeviceId,
       metadata: { from: previous.pumpMode, to: next.pumpMode },
     });
   }
@@ -78,7 +160,8 @@ function auditControlChange(req, previous, next) {
       req,
       action: AUDIT_ACTIONS.MANUAL_PUMP_COMMAND,
       targetType: "device",
-      targetId: "tank-01",
+      targetId: targetDeviceId,
+      targetLabel: targetDeviceId,
       metadata: { command: next.manualPumpState, mode: next.pumpMode },
     });
   }
@@ -90,7 +173,8 @@ function auditControlChange(req, previous, next) {
         ? AUDIT_ACTIONS.MOTEUR_PUMP_PERMISSION_ENABLED
         : AUDIT_ACTIONS.MOTEUR_PUMP_PERMISSION_DISABLED,
       targetType: "device",
-      targetId: "tank-01",
+      targetId: targetDeviceId,
+      targetLabel: targetDeviceId,
       metadata: { allowPumpOnMoteur: next.allowPumpOnMoteur },
     });
   }

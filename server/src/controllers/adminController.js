@@ -515,3 +515,97 @@ export async function getTelemetryStats(req, res, next) {
     next(error);
   }
 }
+
+export async function assignDeviceOwner(req, res, next) {
+  try {
+    const { deviceId } = req.params;
+    const { userId } = req.body;
+
+    const device = await Device.findOne({ deviceId });
+    if (!device) {
+      const error = new Error("Device not found.");
+      error.statusCode = 404;
+      return next(error);
+    }
+
+    const previousOwner = device.owner ? String(device.owner) : null;
+
+    if (userId) {
+      const targetUser = await User.findById(userId);
+      if (!targetUser) {
+        const error = new Error("User not found.");
+        error.statusCode = 404;
+        return next(error);
+      }
+
+      if (targetUser.role !== "user") {
+        const error = new Error("Devices can only be assigned to accounts with the 'user' role. Administrators cannot be device owners.");
+        error.statusCode = 400;
+        return next(error);
+      }
+
+      if (targetUser.isActive === false) {
+        const error = new Error("Cannot assign a device to a disabled user account.");
+        error.statusCode = 400;
+        return next(error);
+      }
+
+      device.owner = targetUser._id;
+      device.ownerAssignedAt = new Date();
+      await device.save();
+
+      await recordAudit({
+        req,
+        action: previousOwner ? AUDIT_ACTIONS.DEVICE_REASSIGNED : AUDIT_ACTIONS.DEVICE_ASSIGNED,
+        targetType: "device",
+        targetId: device.deviceId,
+        targetLabel: device.displayName || device.deviceId,
+        metadata: {
+          previousOwner,
+          newOwner: String(targetUser._id),
+          newOwnerEmail: targetUser.email,
+        },
+      });
+
+      res.status(200).json({
+        success: true,
+        message: `Device ${device.deviceId} assigned to ${targetUser.email}.`,
+        device: {
+          deviceId: device.deviceId,
+          displayName: device.displayName || device.deviceId,
+          owner: device.owner,
+          ownerAssignedAt: device.ownerAssignedAt,
+        },
+      });
+    } else {
+      // Unassign device
+      device.owner = null;
+      device.ownerAssignedAt = null;
+      await device.save();
+
+      await recordAudit({
+        req,
+        action: AUDIT_ACTIONS.DEVICE_UNASSIGNED,
+        targetType: "device",
+        targetId: device.deviceId,
+        targetLabel: device.displayName || device.deviceId,
+        metadata: {
+          previousOwner,
+        },
+      });
+
+      res.status(200).json({
+        success: true,
+        message: `Device ${device.deviceId} unassigned.`,
+        device: {
+          deviceId: device.deviceId,
+          displayName: device.displayName || device.deviceId,
+          owner: null,
+          ownerAssignedAt: null,
+        },
+      });
+    }
+  } catch (error) {
+    next(error);
+  }
+}

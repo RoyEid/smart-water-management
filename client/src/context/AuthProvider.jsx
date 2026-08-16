@@ -6,6 +6,7 @@ import {
   useState,
 } from "react";
 import api from "../services/api";
+import sensorSocket from "../services/socket";
 import { getApiErrorMessage, isUnauthorized } from "../utils/apiError";
 import { AuthContext } from "./AuthContext";
 
@@ -79,6 +80,7 @@ export function AuthProvider({ children }) {
 
   const logout = useCallback(async () => {
     try {
+      sensorSocket.disconnect();
       await api.post("/auth/logout");
     } catch {
       // The cookie is httpOnly, so the client cannot clear it itself. If the
