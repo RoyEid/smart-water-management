@@ -1,0 +1,34 @@
+[
+  {
+    "v": 2,
+    "key": {
+      "_id": 1
+    },
+    "name": "_id_"
+  },
+  {
+    "v": 2,
+    "key": {
+      "deviceId": 1
+    },
+    "name": "deviceId_1",
+    "background": true
+  },
+  {
+    "v": 2,
+    "key": {
+      "receivedAt": 1
+    },
+    "name": "receivedAt_1",
+    "background": true
+  },
+  {
+    "v": 2,
+    "key": {
+      "deviceId": 1,
+      "receivedAt": -1
+    },
+    "name": "deviceId_1_receivedAt_-1",
+    "background": true
+  }
+]

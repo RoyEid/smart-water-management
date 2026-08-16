@@ -1,0 +1,59 @@
+[
+  {
+    "v": 2,
+    "key": {
+      "_id": 1
+    },
+    "name": "_id_"
+  },
+  {
+    "v": 2,
+    "key": {
+      "deviceId": 1
+    },
+    "name": "deviceId_1",
+    "background": true
+  },
+  {
+    "v": 2,
+    "key": {
+      "isRead": 1
+    },
+    "name": "isRead_1",
+    "background": true
+  },
+  {
+    "v": 2,
+    "key": {
+      "isResolved": 1
+    },
+    "name": "isResolved_1",
+    "background": true
+  },
+  {
+    "v": 2,
+    "key": {
+      "lastSeenAt": 1
+    },
+    "name": "lastSeenAt_1",
+    "background": true
+  },
+  {
+    "v": 2,
+    "key": {
+      "deviceId": 1,
+      "code": 1,
+      "isResolved": 1
+    },
+    "name": "deviceId_1_code_1_isResolved_1",
+    "background": true
+  },
+  {
+    "v": 2,
+    "key": {
+      "lastSeenAt": -1
+    },
+    "name": "lastSeenAt_-1",
+    "background": true
+  }
+]

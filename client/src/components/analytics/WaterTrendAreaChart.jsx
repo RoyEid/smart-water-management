@@ -78,7 +78,7 @@ export default function WaterTrendAreaChart({ buckets = [], range = "24h" }) {
                 Lower: {hoveredBucket.avgLowerLevel != null ? `${hoveredBucket.avgLowerLevel}%` : "—"}
               </span>
               <span className="text-emerald-600 dark:text-emerald-400">
-                Pumped: {hoveredBucket.transferredLiters ?? 0} L ({hoveredBucket.pumpRuntimeMinutes ?? 0}m)
+                Pump Active: {hoveredBucket.pumpRuntimeMinutes ?? 0}m
               </span>
             </div>
           </>

@@ -149,19 +149,15 @@ void fetchDeviceControlState();
 void updateFlowMeter();
 void updatePowerSourceDetection();
 bool isDawleSignalPresent();
-void updateSimulatedFlow();
-void updateMeasuredFlow();
 
 float readDistanceCm(int trigPin, int echoPin);
 float readStableDistance(int trigPin, int echoPin);
 float calculatePercentage(
   float distance,
-  float emptyDistance,
-  float fullDistance);
+  float usableHeightCm);
 float calculateWaterHeight(
   float distance,
-  float emptyDistance,
-  float fullDistance);
+  float usableHeightCm);
 
 String getTankStatus(float percentage);
 
@@ -243,7 +239,8 @@ void setup() {
   Serial.println(SERVER_URL);
   Serial.println("Upper tank: TRIG 7, ECHO 15");
   Serial.println("Lower tank: TRIG 12, ECHO 13");
-  Serial.println("Pump relay: GPIO 4");
+  Serial.print("Pump relay: GPIO ");
+  Serial.println(RELAY_PIN);
   Serial.println("Flow sensor: GPIO 18 (YF-S201)");
   Serial.println("Voltage sensor (Dawle): GPIO 3 (ADC1_CH2)");
   Serial.println("=================================");

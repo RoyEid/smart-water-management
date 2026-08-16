@@ -1,10 +1,9 @@
-import { Droplets, Activity, Zap, Clock, TrendingUp } from "lucide-react";
+import { Activity, Zap, Clock, TrendingUp } from "lucide-react";
 import { useLanguage } from "../../context/LanguageContext";
 
 export default function AnalyticsKPIs({ summary, tankCapacities }) {
   const { t } = useLanguage();
 
-  const totalTransferred = summary?.totalWaterTransferredLiters ?? 0;
   const pumpRuntime = summary?.pumpRuntimeMinutes ?? 0;
   const dutyCycle = summary?.pumpDutyCyclePercent ?? 0;
   const dawleAvailability = summary?.dawleAvailabilityPercent ?? 0;
@@ -16,21 +15,21 @@ export default function AnalyticsKPIs({ summary, tankCapacities }) {
 
   return (
     <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      {/* 1. Total Water Transferred */}
+      {/* 1. Total Pump Active Runtime */}
       <div className="relative overflow-hidden rounded-3xl border border-cyan-500/20 bg-gradient-to-br from-cyan-500/10 via-slate-900/5 to-transparent p-5 shadow-sm backdrop-blur-xs transition hover:shadow-md dark:border-cyan-500/30 dark:bg-slate-900/90">
         <div className="flex items-center justify-between">
           <span className="text-[11px] font-extrabold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
-            {t("totalTransferred") || "Total Transferred"}
+            {t("totalPumpRuntime") || "Total Pump Runtime"}
           </span>
           <span className="grid size-9 place-items-center rounded-2xl bg-cyan-500/10 text-cyan-600 dark:bg-cyan-400/10 dark:text-cyan-400">
-            <Droplets size={18} aria-hidden="true" />
+            <Clock size={18} aria-hidden="true" />
           </span>
         </div>
         <div className="mt-3 flex items-baseline gap-2">
           <span className="text-3xl font-black tracking-tight text-slate-900 dark:text-white">
-            {totalTransferred.toLocaleString()}
+            {pumpRuntime.toLocaleString()}
           </span>
-          <span className="text-sm font-extrabold text-cyan-600 dark:text-cyan-400">Liters</span>
+          <span className="text-sm font-extrabold text-cyan-600 dark:text-cyan-400">Mins</span>
         </div>
         <p className="mt-2 flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
           <TrendingUp size={13} className="text-cyan-500" />

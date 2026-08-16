@@ -3,7 +3,6 @@ import Device from "../models/Device.js";
 
 const DEFAULT_DEVICE_ID = "tank-01";
 export const NOMINAL_SAMPLE_INTERVAL_SECONDS = 2; // ESP32 sends telemetry every 2 seconds
-export const NOMINAL_PUMP_FLOW_LPM = 30; // 30 Liters per minute nominal pump transfer rate
 
 /**
  * Calculates start and end timestamps from range string or explicit dates.
@@ -50,13 +49,9 @@ export function computeSummaryStats(summaryStats) {
   const waterFlowActivePercent =
     total > 0 ? Math.round((flowActiveCount / total) * 1000) / 10 : 0;
 
-  const totalWaterTransferredLiters = Math.round(
-    pumpRuntimeMinutes * NOMINAL_PUMP_FLOW_LPM
-  );
-
   return {
     totalReadings: total,
-    totalWaterTransferredLiters,
+    pumpOnCount: pumpOnPoints,
     pumpRuntimeMinutes,
     pumpDutyCyclePercent,
     dawleAvailabilityPercent,
@@ -97,7 +92,6 @@ export function computeSummaryStats(summaryStats) {
 export function computeBucketItem(b) {
   const bucketPumpSec = (b.pumpOnCount ?? 0) * NOMINAL_SAMPLE_INTERVAL_SECONDS;
   const bucketPumpMin = Math.round((bucketPumpSec / 60) * 10) / 10;
-  const bucketTransferredLiters = Math.round(bucketPumpMin * NOMINAL_PUMP_FLOW_LPM);
   const count = b.readingsCount ?? 0;
   const bucketDawlePercent =
     count > 0 ? Math.round(((b.dawleCount ?? 0) / count) * 100) : 0;
@@ -112,7 +106,6 @@ export function computeBucketItem(b) {
     minLowerLevel: b.minLowerLevel != null ? Math.round(b.minLowerLevel * 10) / 10 : null,
     maxLowerLevel: b.maxLowerLevel != null ? Math.round(b.maxLowerLevel * 10) / 10 : null,
     pumpRuntimeMinutes: bucketPumpMin,
-    transferredLiters: bucketTransferredLiters,
     dawleAvailabilityPercent: bucketDawlePercent,
     flowActiveCount: b.flowActiveCount ?? 0,
   };

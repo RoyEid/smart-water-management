@@ -58,7 +58,7 @@ test("computeSummaryStats handles empty and active datasets safely", () => {
   // 1. Empty dataset
   const emptyStats = computeSummaryStats(null);
   assert.equal(emptyStats.totalReadings, 0);
-  assert.equal(emptyStats.totalWaterTransferredLiters, 0);
+  assert.equal(emptyStats.pumpOnCount, 0);
   assert.equal(emptyStats.pumpRuntimeMinutes, 0);
   assert.equal(emptyStats.pumpDutyCyclePercent, 0);
   assert.equal(emptyStats.dawleAvailabilityPercent, 0);
@@ -86,9 +86,9 @@ test("computeSummaryStats handles empty and active datasets safely", () => {
   });
 
   assert.equal(activeStats.totalReadings, 1800);
+  assert.equal(activeStats.pumpOnCount, 300);
   assert.equal(activeStats.pumpRuntimeMinutes, 10.0);
   assert.equal(activeStats.pumpDutyCyclePercent, 16.7);
-  assert.equal(activeStats.totalWaterTransferredLiters, 300); // 10 mins * 30 LPM
   assert.equal(activeStats.dawleAvailabilityPercent, 80.0);
   assert.equal(activeStats.moteurRuntimePercent, 20.0);
   assert.equal(activeStats.waterLevels.upper.avg, 75.4);
@@ -96,7 +96,7 @@ test("computeSummaryStats handles empty and active datasets safely", () => {
   assert.equal(activeStats.distribution.pumpMode.autoPercent, 94);
 });
 
-test("computeBucketItem calculates bucket volume and duration accurately", () => {
+test("computeBucketItem calculates bucket metrics and duration accurately", () => {
   const bucket = computeBucketItem({
     _id: "2026-08-15T10:00:00.000Z",
     readingsCount: 120,
@@ -115,7 +115,6 @@ test("computeBucketItem calculates bucket volume and duration accurately", () =>
   assert.equal(bucket.avgUpperLevel, 65.2);
   assert.equal(bucket.avgLowerLevel, 70.2);
   assert.equal(bucket.pumpRuntimeMinutes, 2.0);
-  assert.equal(bucket.transferredLiters, 60); // 2 mins * 30 LPM
   assert.equal(bucket.dawleAvailabilityPercent, 100);
   assert.equal(bucket.flowActiveCount, 55);
 });

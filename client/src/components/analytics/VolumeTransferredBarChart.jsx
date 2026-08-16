@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { BarChart2, Droplets } from "lucide-react";
+import { BarChart2, Clock } from "lucide-react";
 import { useLanguage } from "../../context/LanguageContext";
 
 export default function VolumeTransferredBarChart({ buckets = [], range = "24h" }) {
   const { t } = useLanguage();
   const [hoveredIndex, setHoveredIndex] = useState(null);
 
-  const maxTransferred = Math.max(...buckets.map((b) => b.transferredLiters ?? 0), 10);
+  const maxRuntime = Math.max(...buckets.map((b) => b.pumpRuntimeMinutes ?? 0), 5);
 
   const formatTimestamp = (ts) => {
     if (!ts) return "";
@@ -24,19 +24,19 @@ export default function VolumeTransferredBarChart({ buckets = [], range = "24h" 
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <span className="text-[11px] font-extrabold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">
-            {t("volumeTransferred") || "Volume Transferred (Liters)"}
+            {t("pumpRuntimeDuration") || "Pump Runtime (Minutes)"}
           </span>
           <h3 className="mt-0.5 text-lg font-extrabold tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            Bucket Water Pumping Volume
+            Bucket Pump Runtime Duration
             <BarChart2 size={18} className="text-emerald-600 dark:text-emerald-400" />
           </h3>
         </div>
 
         {hoveredBucket && (
           <div className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
-            <Droplets size={14} />
+            <Clock size={14} />
             <span>
-              {formatTimestamp(hoveredBucket.timestamp)}: {hoveredBucket.transferredLiters ?? 0} L ({hoveredBucket.pumpRuntimeMinutes ?? 0} mins)
+              {formatTimestamp(hoveredBucket.timestamp)}: {hoveredBucket.pumpRuntimeMinutes ?? 0} mins ({hoveredBucket.readingsCount ?? 0} samples)
             </span>
           </div>
         )}
@@ -46,8 +46,8 @@ export default function VolumeTransferredBarChart({ buckets = [], range = "24h" 
       <div className="mt-6">
         <div className="flex h-48 items-end gap-1 sm:gap-2">
           {buckets.map((b, i) => {
-            const val = b.transferredLiters ?? 0;
-            const heightPercent = Math.min(100, Math.max(4, (val / maxTransferred) * 100));
+            const val = b.pumpRuntimeMinutes ?? 0;
+            const heightPercent = Math.min(100, Math.max(4, (val / maxRuntime) * 100));
             const isHovered = hoveredIndex === i;
 
             return (
