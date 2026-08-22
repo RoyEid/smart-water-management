@@ -21,7 +21,6 @@ import {
   listAuditLog,
   getSystemConfig,
   getTelemetryStats,
-  assignDeviceOwner,
 } from "../controllers/adminController.js";
 
 const router = Router();
@@ -56,21 +55,6 @@ const auditQuerySchema = z.object({
 });
 
 const idParamSchema = z.object({ id: objectIdParam });
-
-const deviceIdParamSchema = z.object({
-  deviceId: z
-    .string()
-    .trim()
-    .min(1, "deviceId is required.")
-    .max(64, "deviceId is too long.")
-    .regex(/^[A-Za-z0-9_-]+$/, "deviceId contains unsupported characters."),
-});
-
-const assignDeviceSchema = z
-  .object({
-    userId: objectIdParam.nullable(),
-  })
-  .strict();
 
 const roleSchema = z
   .object({
@@ -120,14 +104,6 @@ router.delete(
   adminWriteLimiter,
   validateParams(idParamSchema),
   deleteUser
-);
-
-router.patch(
-  "/devices/:deviceId/assign",
-  adminWriteLimiter,
-  validateParams(deviceIdParamSchema),
-  validateRequest(assignDeviceSchema),
-  assignDeviceOwner
 );
 
 router.get("/audit-log", validateQuery(auditQuerySchema), listAuditLog);

@@ -4,13 +4,19 @@ import { requireAuth, requireAdmin } from "../middleware/authenticate.js";
 import validateRequest from "../middleware/validateRequest.js";
 import validateParams from "../middleware/validateParams.js";
 import validateQuery from "../middleware/validateQuery.js";
-import { paginationSchema, isoDate } from "../utils/validationSchemas.js";
+import { paginationSchema, isoDate, objectIdParam } from "../utils/validationSchemas.js";
 import {
   listDevices,
   getDevice,
   renameDevice,
   updateTankConfig,
 } from "../controllers/deviceController.js";
+import {
+  listDeviceMembersHandler,
+  addDeviceMemberHandler,
+  updateDeviceMemberHandler,
+  removeDeviceMemberHandler,
+} from "../controllers/deviceMemberController.js";
 import {
   listTelemetryHistory,
   exportTelemetryHistory,
@@ -127,6 +133,33 @@ router.patch(
   renameDevice
 );
 
+const addMemberSchema = z
+  .object({
+    email: z.string().trim().email("Please enter a valid email address."),
+    role: z.enum(["controller", "viewer"], {
+      errorMap: () => ({ message: "Role must be controller or viewer." }),
+    }),
+    nickname: z.string().trim().max(50).optional(),
+  })
+  .strict();
+
+const updateMemberSchema = z
+  .object({
+    role: z.enum(["controller", "viewer"]).optional(),
+    nickname: z.string().trim().max(50).optional(),
+  })
+  .strict();
+
+const memberParamSchema = z.object({
+  deviceId: z
+    .string()
+    .trim()
+    .min(1, "deviceId is required.")
+    .max(64, "deviceId is too long.")
+    .regex(/^[A-Za-z0-9_-]+$/, "deviceId contains unsupported characters."),
+  memberId: objectIdParam,
+});
+
 router.put(
   "/:deviceId/tanks",
   requireAuth,
@@ -135,4 +168,36 @@ router.put(
   updateTankConfig
 );
 
+/* Household member management (Owner only) */
+router.get(
+  "/:deviceId/members",
+  requireAuth,
+  validateParams(deviceIdParamSchema),
+  listDeviceMembersHandler
+);
+
+router.post(
+  "/:deviceId/members",
+  requireAuth,
+  validateParams(deviceIdParamSchema),
+  validateRequest(addMemberSchema),
+  addDeviceMemberHandler
+);
+
+router.patch(
+  "/:deviceId/members/:memberId",
+  requireAuth,
+  validateParams(memberParamSchema),
+  validateRequest(updateMemberSchema),
+  updateDeviceMemberHandler
+);
+
+router.delete(
+  "/:deviceId/members/:memberId",
+  requireAuth,
+  validateParams(memberParamSchema),
+  removeDeviceMemberHandler
+);
+
 export default router;
+

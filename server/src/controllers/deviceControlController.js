@@ -4,6 +4,10 @@ import {
   getDeviceControlStateAsync,
   setDeviceControlState,
 } from "../services/deviceControlService.js";
+import {
+  getAccessibleDeviceIds,
+  getDevicePermission,
+} from "../services/deviceAccessService.js";
 import { emitDeviceControlChanged } from "../realtime/socketServer.js";
 import { recordAudit } from "../services/auditService.js";
 import { AUDIT_ACTIONS } from "../models/AuditLog.js";
@@ -12,11 +16,9 @@ export async function getDeviceControl(req, res, next) {
   try {
     // 1. Normal User Role Scoping
     if (req.user?.role === "user") {
-      const ownedDevices = await Device.find({ owner: req.user._id })
-        .select("deviceId")
-        .lean();
+      const accessibleDeviceIds = await getAccessibleDeviceIds(req.user);
 
-      if (ownedDevices.length === 0) {
+      if (accessibleDeviceIds.length === 0) {
         return res.status(200).json({
           success: true,
           control: null,
@@ -26,13 +28,13 @@ export async function getDeviceControl(req, res, next) {
 
       let targetDeviceId = req.query?.deviceId || req.body?.deviceId;
       if (targetDeviceId) {
-        if (!ownedDevices.some((d) => d.deviceId === targetDeviceId)) {
+        if (!accessibleDeviceIds.includes(targetDeviceId)) {
           const error = new Error("You are not authorized to view controls for this device.");
           error.statusCode = 403;
           return next(error);
         }
       } else {
-        targetDeviceId = ownedDevices[0].deviceId;
+        targetDeviceId = accessibleDeviceIds[0];
       }
 
       const control = await getDeviceControlStateAsync(targetDeviceId);
@@ -76,20 +78,29 @@ export async function updateDeviceControl(req, res, next) {
     let targetDeviceId = req.device?.deviceId || req.body?.deviceId || req.query?.deviceId;
 
     if (req.user?.role === "user") {
-      const ownedDevices = await Device.find({ owner: req.user._id })
-        .select("deviceId")
-        .lean();
+      const accessibleDeviceIds = await getAccessibleDeviceIds(req.user);
 
-      if (ownedDevices.length === 0) {
+      if (accessibleDeviceIds.length === 0) {
         const error = new Error("You have no assigned device to operate.");
         error.statusCode = 403;
         return next(error);
       }
 
       if (!targetDeviceId) {
-        targetDeviceId = ownedDevices[0].deviceId;
-      } else if (!ownedDevices.some((d) => d.deviceId === targetDeviceId)) {
+        targetDeviceId = accessibleDeviceIds[0];
+      }
+
+      // Check per-device role: Viewers must be rejected!
+      const permission = await getDevicePermission(req.user._id, targetDeviceId);
+
+      if (!permission) {
         const error = new Error("You are not authorized to operate controls for this device.");
+        error.statusCode = 403;
+        return next(error);
+      }
+
+      if (permission === "viewer") {
+        const error = new Error("Viewers have read-only access and cannot operate device controls.");
         error.statusCode = 403;
         return next(error);
       }

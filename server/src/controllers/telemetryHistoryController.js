@@ -1,5 +1,6 @@
 import Device from "../models/Device.js";
 import UltrasonicReading from "../models/UltrasonicReading.js";
+import { getUserAccessibleDevices } from "../services/deviceAccessService.js";
 import { serializeStoredReading } from "./deviceController.js";
 
 // Export is capped well above a normal page but far below the collection size:
@@ -49,11 +50,9 @@ export async function listTelemetryHistory(req, res, next) {
     const filter = buildFilter(query);
 
     if (req.user?.role === "user") {
-      const ownedDevices = await Device.find({ owner: req.user._id })
-        .select("deviceId ownerAssignedAt")
-        .lean();
+      const accessibleDevices = await getUserAccessibleDevices(req.user);
 
-      if (ownedDevices.length === 0) {
+      if (accessibleDevices.length === 0) {
         return res.status(200).json({
           success: true,
           readings: [],
@@ -69,7 +68,7 @@ export async function listTelemetryHistory(req, res, next) {
       }
 
       if (query.deviceId) {
-        const target = ownedDevices.find((d) => d.deviceId === query.deviceId);
+        const target = accessibleDevices.find((d) => d.deviceId === query.deviceId);
         if (!target) {
           const error = new Error("You are not authorized to view telemetry for this device.");
           error.statusCode = 403;
@@ -82,8 +81,8 @@ export async function listTelemetryHistory(req, res, next) {
             : { $gte: target.ownerAssignedAt };
         }
       } else {
-        if (ownedDevices.length === 1) {
-          const target = ownedDevices[0];
+        if (accessibleDevices.length === 1) {
+          const target = accessibleDevices[0];
           filter.deviceId = target.deviceId;
           if (target.ownerAssignedAt) {
             filter.receivedAt = filter.receivedAt
@@ -91,7 +90,7 @@ export async function listTelemetryHistory(req, res, next) {
               : { $gte: target.ownerAssignedAt };
           }
         } else {
-          filter.$or = ownedDevices.map((d) => ({
+          filter.$or = accessibleDevices.map((d) => ({
             deviceId: d.deviceId,
             ...(d.ownerAssignedAt ? { receivedAt: { $gte: d.ownerAssignedAt } } : {}),
           }));
@@ -146,11 +145,9 @@ export async function exportTelemetryHistory(req, res, next) {
     const filter = buildFilter(query);
 
     if (req.user?.role === "user") {
-      const ownedDevices = await Device.find({ owner: req.user._id })
-        .select("deviceId ownerAssignedAt")
-        .lean();
+      const accessibleDevices = await getUserAccessibleDevices(req.user);
 
-      if (ownedDevices.length === 0) {
+      if (accessibleDevices.length === 0) {
         const columns = [
           "receivedAt", "deviceId", "upperPercentage", "upperDistanceCm", "upperWaterHeightCm",
           "upperStatus", "lowerPercentage", "lowerDistanceCm", "lowerWaterHeightCm", "lowerStatus",
@@ -163,7 +160,7 @@ export async function exportTelemetryHistory(req, res, next) {
       }
 
       if (query.deviceId) {
-        const target = ownedDevices.find((d) => d.deviceId === query.deviceId);
+        const target = accessibleDevices.find((d) => d.deviceId === query.deviceId);
         if (!target) {
           const error = new Error("You are not authorized to export telemetry for this device.");
           error.statusCode = 403;
@@ -176,8 +173,8 @@ export async function exportTelemetryHistory(req, res, next) {
             : { $gte: target.ownerAssignedAt };
         }
       } else {
-        if (ownedDevices.length === 1) {
-          const target = ownedDevices[0];
+        if (accessibleDevices.length === 1) {
+          const target = accessibleDevices[0];
           filter.deviceId = target.deviceId;
           if (target.ownerAssignedAt) {
             filter.receivedAt = filter.receivedAt
@@ -185,7 +182,7 @@ export async function exportTelemetryHistory(req, res, next) {
               : { $gte: target.ownerAssignedAt };
           }
         } else {
-          filter.$or = ownedDevices.map((d) => ({
+          filter.$or = accessibleDevices.map((d) => ({
             deviceId: d.deviceId,
             ...(d.ownerAssignedAt ? { receivedAt: { $gte: d.ownerAssignedAt } } : {}),
           }));

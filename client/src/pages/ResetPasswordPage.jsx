@@ -31,6 +31,7 @@ function ResetPasswordPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] =
     useState(false);
+  const [passwordFocused, setPasswordFocused] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const passwordRules = {
@@ -189,6 +190,8 @@ function ResetPasswordPage() {
           placeholder="Enter your new password"
           value={formData.password}
           onChange={handleChange}
+          onFocus={() => setPasswordFocused(true)}
+          onBlur={() => setPasswordFocused(false)}
           error={errors.password}
           visible={showPassword}
           onToggle={() =>
@@ -196,28 +199,30 @@ function ResetPasswordPage() {
           }
         />
 
-        {/* Password requirements */}
-        <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-3">
-          <PasswordRule
-            passed={passwordRules.length}
-            text="8+ characters"
-          />
+        {/* Password requirements (visible only when new password field is focused) */}
+        {passwordFocused && (
+          <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-3 transition-all duration-200">
+            <PasswordRule
+              passed={passwordRules.length}
+              text="8+ characters"
+            />
 
-          <PasswordRule
-            passed={passwordRules.uppercase}
-            text="Uppercase"
-          />
+            <PasswordRule
+              passed={passwordRules.uppercase}
+              text="Uppercase"
+            />
 
-          <PasswordRule
-            passed={passwordRules.lowercase}
-            text="Lowercase"
-          />
+            <PasswordRule
+              passed={passwordRules.lowercase}
+              text="Lowercase"
+            />
 
-          <PasswordRule
-            passed={passwordRules.number}
-            text="One number"
-          />
-        </div>
+            <PasswordRule
+              passed={passwordRules.number}
+              text="One number"
+            />
+          </div>
+        )}
 
         <PasswordField
           id="confirm-new-password"
@@ -267,6 +272,8 @@ function PasswordField({
   placeholder,
   value,
   onChange,
+  onFocus,
+  onBlur,
   error,
   visible,
   onToggle,
@@ -292,6 +299,8 @@ function PasswordField({
           type={visible ? "text" : "password"}
           value={value}
           onChange={onChange}
+          onFocus={onFocus}
+          onBlur={onBlur}
           placeholder={placeholder}
           autoComplete="new-password"
           aria-invalid={Boolean(error)}
@@ -311,7 +320,7 @@ function PasswordField({
           className="absolute right-1 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-lg bg-transparent text-slate-400 transition hover:bg-blue-50 hover:text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
           aria-label={visible ? "Hide password" : "Show password"}
         >
-          {visible ? <EyeOff size={18} /> : <Eye size={18} />}
+          {visible ? <Eye size={18} /> : <EyeOff size={18} />}
         </button>
       </div>
 

@@ -12,12 +12,14 @@ import { useLocation, useNavigate } from "react-router-dom";
 import OtpInput from "../components/OtpInput";
 import RecoveryLayout from "../components/RecoveryLayout";
 import api from "../services/api";
+import { useAuth } from "../context/AuthContext";
 
 const CODE_LENGTH = 6;
 const RESEND_WAIT = 60;
 const CODE_EXPIRY = 10 * 60;
 
 function VerifyCodePage() {
+  const { refreshUser } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -120,14 +122,8 @@ function VerifyCodePage() {
           },
         });
       } else {
-        navigate("/login", {
-          replace: true,
-          state: {
-            message:
-              response.data.message ||
-              "Email verified successfully. You can now log in.",
-          },
-        });
+        await refreshUser();
+        navigate("/dashboard", { replace: true });
       }
     } catch (error) {
       setStatus({

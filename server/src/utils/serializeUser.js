@@ -24,7 +24,7 @@ export function serializeUser(user, { includePasswordFlag = false } = {}) {
       github: Boolean(user.githubId),
     },
     preferences: {
-      theme: user.preferences?.theme || "system",
+      theme: user.preferences?.theme || "light",
       language: user.preferences?.language || "en",
     },
     notificationPrefs: {

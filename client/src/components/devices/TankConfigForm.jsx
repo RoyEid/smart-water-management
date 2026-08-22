@@ -22,7 +22,8 @@ export default function TankConfigForm({ device, onUpdated }) {
 
   const tanks = device?.tanks;
   const isConfigured = Boolean(tanks?.isConfigured);
-  const canEdit = !isAdmin;
+  const isOwner = device?.userRole ? device.userRole === "owner" : true;
+  const canEdit = !isAdmin && isOwner;
 
   const [isEditing, setIsEditing] = useState(() => !isConfigured && canEdit);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);

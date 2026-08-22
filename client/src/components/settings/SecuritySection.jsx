@@ -41,6 +41,7 @@ export default function SecuritySection({ user, logout }) {
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [newPasswordFocused, setNewPasswordFocused] = useState(false);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState(null);
 
@@ -145,6 +146,8 @@ export default function SecuritySection({ user, logout }) {
                 type={showNew ? "text" : "password"}
                 value={form.newPassword}
                 onChange={handleChange}
+                onFocus={() => setNewPasswordFocused(true)}
+                onBlur={() => setNewPasswordFocused(false)}
                 autoComplete="new-password"
                 className="h-11 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 pl-4 pr-12 text-sm text-slate-900 dark:text-slate-100 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/30"
                 placeholder={t("newPassword")}
@@ -160,9 +163,9 @@ export default function SecuritySection({ user, logout }) {
             </div>
           </div>
 
-          {/* Password rules */}
-          {form.newPassword && (
-            <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 p-3 ring-1 ring-slate-200/80 dark:ring-slate-700/80">
+          {/* Password rules (visible only when new password field is focused) */}
+          {newPasswordFocused && (
+            <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 p-3 ring-1 ring-slate-200/80 dark:ring-slate-700/80 transition-all duration-200">
               {[
                 { key: "length", label: t("pwdRuleLength") },
                 { key: "uppercase", label: t("pwdRuleUppercase") },

@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   CheckCircle2,
   CircleAlert,
+  Eye,
   LoaderCircle,
   Power,
   ShieldAlert,
@@ -11,6 +12,7 @@ import {
 } from "lucide-react";
 import ConfirmDialog from "../ui/ConfirmDialog";
 import { useAuth } from "../../context/AuthContext";
+import { useTelemetry } from "../../context/TelemetryContext";
 import { useLanguage } from "../../context/LanguageContext";
 import { useToast } from "../../context/ToastContext";
 import { canCommandManualOn } from "../../utils/pumpReasoning";
@@ -38,10 +40,12 @@ export default function DeviceControlPanel({
   setAllowPumpOnMoteur,
 }) {
   const { isAdmin } = useAuth();
+  const { device } = useTelemetry();
   const { t, language } = useLanguage();
   const toast = useToast();
   const [pendingConfirm, setPendingConfirm] = useState(null);
 
+  const isViewer = device?.userRole === "viewer";
   const { systemEnabled, pumpMode, manualPumpState, allowPumpOnMoteur } = controlState;
   const knownSystemState = systemEnabled !== undefined;
   const isManual = pumpMode === "MANUAL";
@@ -51,8 +55,8 @@ export default function DeviceControlPanel({
 
   // A control that has not loaded yet must not be clickable: acting on an
   // unknown current state can send the opposite of what the user intends.
-  // When viewed by an admin, all physical actuators are read-only.
-  const controlsBusy = updating || loading || isAdmin;
+  // When viewed by an admin or viewer, all physical actuators are read-only.
+  const controlsBusy = updating || loading || isAdmin || isViewer;
 
   const runCommand = async (command, successKey) => {
     const result = await command();
@@ -106,6 +110,19 @@ export default function DeviceControlPanel({
             <p className="font-extrabold">{t("adminReadOnlyTitle") || "Administrator View (Read-Only)"}</p>
             <p className="mt-0.5 text-[11px] opacity-90">
               {t("adminReadOnlyNotice") || "Physical pump controls and operational modes are restricted to the assigned installation user."}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Viewer Read-Only Notice */}
+      {!isAdmin && isViewer && (
+        <div className="mt-4 flex items-start gap-3 rounded-2xl bg-slate-100 dark:bg-slate-800/80 p-4 text-xs font-semibold text-slate-700 dark:text-slate-300 ring-1 ring-slate-200 dark:ring-slate-700">
+          <Eye size={18} className="mt-0.5 shrink-0 text-slate-500 dark:text-slate-400" />
+          <div>
+            <p className="font-extrabold">Viewer Access (Read-Only)</p>
+            <p className="mt-0.5 text-[11px] opacity-90">
+              You can monitor live tank levels and pump telemetry, but physical pump actuation and mode changes are disabled.
             </p>
           </div>
         </div>

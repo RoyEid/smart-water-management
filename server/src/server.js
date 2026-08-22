@@ -13,6 +13,7 @@ import {
   hydrateOpenAlerts,
   sweepOfflineDevices,
 } from "./services/alertService.js";
+import { syncDeviceMembersOnBoot } from "./services/deviceAccessService.js";
 
 const PORT = process.env.PORT || 5000;
 const HOST = "0.0.0.0";
@@ -46,6 +47,7 @@ connectDB()
       hydrateLatestReading(),
       hydrateDeviceControlState(),
       hydrateOpenAlerts(),
+      syncDeviceMembersOnBoot(),
     ])
   )
   .then(() => {

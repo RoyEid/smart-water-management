@@ -1,24 +1,24 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Check, Cpu, LoaderCircle, Pencil, X } from "lucide-react";
+import { Check, Cpu, Crown, Eye, LoaderCircle, Pencil, Sliders, Users, X } from "lucide-react";
 import {
   EmptyState,
   ErrorState,
   TableSkeleton,
 } from "../../components/ui/StateViews";
-import { fetchDevices, renameDevice } from "../../services/deviceApi";
-import { fetchAdminUsers, assignDeviceOwner } from "../../services/adminApi";
+import { renameDevice } from "../../services/deviceApi";
+import { fetchTelemetryStats } from "../../services/adminApi";
 import useAsyncData from "../../hooks/useAsyncData";
 import { useLanguage } from "../../context/LanguageContext";
 import { useToast } from "../../context/ToastContext";
 import { getApiErrorMessage } from "../../utils/apiError";
-import { formatPercentage, formatRelativeAge } from "../../utils/telemetryFormat";
+import { formatRelativeAge } from "../../utils/telemetryFormat";
 
 /**
- * Administrative view of the device registry.
+ * Platform Administrator Device Registry View.
  *
- * Admins manage friendly names and assign devices to operational users.
- * Physical tank configuration and pump controls are reserved for the assigned device owner.
+ * Admins monitor hardware identity, platform health, owner association, and member metrics.
+ * Physical actuation and member management are strictly managed at household owner level.
  */
 export default function AdminDevicesPage() {
   const { t } = useLanguage();
@@ -27,23 +27,16 @@ export default function AdminDevicesPage() {
   const [editingId, setEditingId] = useState(null);
   const [nameDraft, setNameDraft] = useState("");
   const [isSaving, setIsSaving] = useState(false);
-  const [assigningId, setAssigningId] = useState(null);
 
-  const { data, isLoading, error, retry, refresh } = useAsyncData(fetchDevices, [], {
-    fallbackMessage: "Unable to load devices.",
+  const { data, isLoading, error, retry, refresh } = useAsyncData(fetchTelemetryStats, [], {
+    fallbackMessage: "Unable to load device registry.",
   });
 
-  const { data: usersData } = useAsyncData(
-    () => fetchAdminUsers({ role: "user", limit: 100 }),
-    []
-  );
-
   const devices = data?.devices ?? [];
-  const users = (usersData?.users ?? []).filter((u) => u.role === "user" && u.isActive !== false);
 
   const startEditing = (device) => {
     setEditingId(device.deviceId);
-    setNameDraft(device.hasCustomName ? device.displayName : "");
+    setNameDraft(device.displayName || "");
   };
 
   const saveName = async (deviceId) => {
@@ -60,30 +53,26 @@ export default function AdminDevicesPage() {
     }
   };
 
-  const handleAssign = async (deviceId, userId) => {
-    setAssigningId(deviceId);
-    try {
-      const result = await assignDeviceOwner(deviceId, userId);
-      toast.success(result.message || (userId ? t("deviceAssigned") : t("deviceUnassigned")));
-      refresh();
-    } catch (requestError) {
-      toast.error(getApiErrorMessage(requestError, "Unable to update device assignment."));
-    } finally {
-      setAssigningId(null);
-    }
-  };
-
   return (
     <section className="rounded-3xl border border-slate-200/80 bg-white/90 p-5 shadow-sm sm:p-6 dark:border-slate-800 dark:bg-slate-900/90">
-      <h3 className="text-sm font-extrabold text-slate-900 dark:text-slate-100">
-        {t("deviceRegistry")}
-      </h3>
-      <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">
-        {t("deviceRegistryDesc")}
-      </p>
+      <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+        <div>
+          <h3 className="text-sm font-extrabold text-slate-900 dark:text-slate-100">
+            {t("deviceRegistry")}
+          </h3>
+          <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+            Platform-wide registry of physical ESP32 tanks, assigned owners, and household members.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="rounded-xl bg-slate-100 px-3 py-1 text-xs font-extrabold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+            Total Devices: {devices.length}
+          </span>
+        </div>
+      </div>
 
       <div className="mt-5">
-        {isLoading && <TableSkeleton rows={3} columns={6} />}
+        {isLoading && <TableSkeleton rows={3} columns={7} />}
 
         {!isLoading && error && (
           <ErrorState message={error} onRetry={retry} retryLabel={t("retry")} />
@@ -95,15 +84,15 @@ export default function AdminDevicesPage() {
 
         {!isLoading && !error && devices.length > 0 && (
           <div className="-mx-5 overflow-x-auto sm:-mx-6">
-            <table className="w-full min-w-[50rem] border-collapse">
+            <table className="w-full min-w-[56rem] border-collapse">
               <thead>
                 <tr className="border-b border-slate-100 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:border-slate-800">
                   <th scope="col" className="px-3 py-3 text-start ps-5 sm:ps-6">{t("deviceId")}</th>
                   <th scope="col" className="px-3 py-3 text-start">{t("friendlyName")}</th>
-                  <th scope="col" className="px-3 py-3 text-start">{t("assignedUser")}</th>
+                  <th scope="col" className="px-3 py-3 text-start">Owner</th>
+                  <th scope="col" className="px-3 py-3 text-start">Members</th>
                   <th scope="col" className="px-3 py-3 text-start">{t("state")}</th>
                   <th scope="col" className="px-3 py-3 text-start">{t("lastSeen")}</th>
-                  <th scope="col" className="px-3 py-3 text-start">{t("levels")}</th>
                   <th scope="col" className="px-3 py-3 text-start">{t("storedReadings")}</th>
                   <th scope="col" className="px-3 py-3 text-end pe-5 sm:pe-6">
                     <span className="sr-only">{t("actions")}</span>
@@ -112,7 +101,6 @@ export default function AdminDevicesPage() {
               </thead>
               <tbody className="divide-y divide-slate-50 text-xs font-semibold text-slate-700 dark:divide-slate-800/60 dark:text-slate-300">
                 {devices.map((device) => {
-                  const ownerId = device.owner?._id || device.owner || "";
                   return (
                     <tr key={device.deviceId}>
                       <td className="px-3 py-3 ps-5 font-mono text-[11px] font-bold sm:ps-6">
@@ -172,23 +160,40 @@ export default function AdminDevicesPage() {
                       </td>
 
                       <td className="px-3 py-3">
+                        {device.owner ? (
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 font-bold text-slate-900 dark:text-slate-100">
+                              <Crown size={12} className="text-amber-500 shrink-0" />
+                              <span className="truncate">{device.owner.name}</span>
+                            </div>
+                            <p className="truncate text-[10px] text-slate-400 dark:text-slate-500 font-normal">
+                              {device.owner.email}
+                            </p>
+                          </div>
+                        ) : (
+                          <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                            Unassigned
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="px-3 py-3">
                         <div className="flex items-center gap-1.5">
-                          <select
-                            value={ownerId}
-                            onChange={(e) => handleAssign(device.deviceId, e.target.value || null)}
-                            disabled={assigningId === device.deviceId}
-                            aria-label={t("assignedUser")}
-                            className="h-8 max-w-[12rem] rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-700 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                          >
-                            <option value="">{t("unassigned")}</option>
-                            {users.map((u) => (
-                              <option key={u.id || u._id} value={u.id || u._id}>
-                                {u.name || u.email} ({u.email})
-                              </option>
-                            ))}
-                          </select>
-                          {assigningId === device.deviceId && (
-                            <LoaderCircle size={13} className="animate-spin text-blue-500" />
+                          <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-extrabold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                            <Users size={11} />
+                            {device.membersCount || 0}
+                          </span>
+                          {device.controllersCount > 0 && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold text-blue-700 dark:bg-blue-950/60 dark:text-cyan-300" title="Controllers">
+                              <Sliders size={9} />
+                              {device.controllersCount}
+                            </span>
+                          )}
+                          {device.viewersCount > 0 && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-1.5 py-0.5 text-[9px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-400" title="Viewers">
+                              <Eye size={9} />
+                              {device.viewersCount}
+                            </span>
                           )}
                         </div>
                       </td>
@@ -211,13 +216,8 @@ export default function AdminDevicesPage() {
                         )}
                       </td>
 
-                      <td className="whitespace-nowrap px-3 py-3 text-[11px] tabular-nums">
-                        {formatPercentage(device.upperTank?.percentage).text} /{" "}
-                        {formatPercentage(device.lowerTank?.percentage).text}
-                      </td>
-
                       <td className="px-3 py-3 font-mono text-[11px] tabular-nums">
-                        {(device.totalReadings ?? 0).toLocaleString()}
+                        {(device.records ?? 0).toLocaleString()}
                       </td>
 
                       <td className="px-3 py-3 pe-5 text-end sm:pe-6">

@@ -4,6 +4,7 @@ import {
   getLatestReading,
   saveLatestReading,
 } from "../services/ultrasonicReadingService.js";
+import { getAccessibleDeviceIds } from "../services/deviceAccessService.js";
 import { emitUltrasonicReading } from "../realtime/socketServer.js";
 import { serializeStoredReading } from "./deviceController.js";
 
@@ -29,23 +30,21 @@ export async function getLatestUltrasonicReading(req, res, next) {
   try {
     // 1. Normal User Role Scoping
     if (req.user?.role === "user") {
-      const ownedDevices = await Device.find({ owner: req.user._id })
-        .select("deviceId ownerAssignedAt")
-        .lean();
+      const accessibleDeviceIds = await getAccessibleDeviceIds(req.user);
 
-      if (ownedDevices.length === 0) {
+      if (accessibleDeviceIds.length === 0) {
         return res.status(200).json(null);
       }
 
       let targetDeviceId = req.query?.deviceId;
       if (targetDeviceId) {
-        if (!ownedDevices.some((d) => d.deviceId === targetDeviceId)) {
+        if (!accessibleDeviceIds.includes(targetDeviceId)) {
           const error = new Error("You are not authorized to view telemetry for this device.");
           error.statusCode = 403;
           return next(error);
         }
       } else {
-        targetDeviceId = ownedDevices[0].deviceId;
+        targetDeviceId = accessibleDeviceIds[0];
       }
 
       const memoryReading = getLatestReading(targetDeviceId);

@@ -41,6 +41,10 @@ export async function register(req, res, next) {
       password: hashedPassword,
       role: "user",
       isVerified: false,
+      preferences: {
+        theme: "light",
+        language: "en",
+      },
     });
 
     // Generate 6-digit code
@@ -152,11 +156,27 @@ export async function verifyEmail(req, res, next) {
     user.emailVerificationCodeHash = undefined;
     user.emailVerificationExpires = undefined;
     user.emailVerificationAttempts = 0;
+    user.lastLoginAt = new Date();
 
     await user.save();
 
+    // Sign JWT and set HTTP-only auth cookie (same session logic as normal login)
+    const token = signJWT(user._id, user.role);
+    setAuthCookie(res, token, false);
+
+    await recordAudit({
+      req,
+      actor: user,
+      action: AUDIT_ACTIONS.LOGIN,
+      targetType: "account",
+      targetId: user._id,
+      targetLabel: user.email,
+      metadata: { provider: "email_verification" },
+    });
+
     res.status(200).json({
-      message: "Email verified successfully! You can now log in.",
+      message: "Email verified successfully.",
+      user: serializeUser(user, { includePasswordFlag: true }),
     });
   } catch (error) {
     next(error);

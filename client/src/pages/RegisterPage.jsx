@@ -33,6 +33,7 @@ function RegisterPage() {
   const [status, setStatus] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [passwordFocused, setPasswordFocused] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const passwordRules = {
@@ -194,48 +195,52 @@ function RegisterPage() {
           placeholder="Create a strong password"
           value={formData.password}
           onChange={handleChange}
+          onFocus={() => setPasswordFocused(true)}
+          onBlur={() => setPasswordFocused(false)}
           error={errors.password}
           visible={showPassword}
           onToggle={() => setShowPassword(!showPassword)}
         />
 
-        {/* Strength bar */}
-        <div className="strength-panel rounded-xl bg-slate-100 p-3">
-          <div className="mb-3 flex items-center justify-between">
-            <p className="text-xs font-medium text-slate-500">
-              Password strength
-            </p>
-
-            {formData.password && (
-              <p className={`text-xs font-bold ${strengthDetails.textColor}`}>
-                {strengthDetails.label}
+        {/* Strength bar & requirements (visible only while interacting with the password field) */}
+        {passwordFocused && (
+          <div className="strength-panel rounded-xl bg-slate-100 p-3 transition-all duration-200">
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-xs font-medium text-slate-500">
+                Password strength
               </p>
-            )}
+
+              {formData.password && (
+                <p className={`text-xs font-bold ${strengthDetails.textColor}`}>
+                  {strengthDetails.label}
+                </p>
+              )}
+            </div>
+
+            <div className="mb-3 grid grid-cols-4 gap-1.5">
+              {[1, 2, 3, 4].map((level) => (
+                <span
+                  key={level}
+                  className={`h-1.5 rounded-full transition-colors ${
+                    passwordScore >= level
+                      ? strengthDetails.barColor
+                      : "bg-slate-200"
+                  }`}
+                />
+              ))}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <PasswordRule passed={passwordRules.length} text="8+ characters" />
+
+              <PasswordRule passed={passwordRules.uppercase} text="Uppercase" />
+
+              <PasswordRule passed={passwordRules.lowercase} text="Lowercase" />
+
+              <PasswordRule passed={passwordRules.number} text="One number" />
+            </div>
           </div>
-
-          <div className="mb-3 grid grid-cols-4 gap-1.5">
-            {[1, 2, 3, 4].map((level) => (
-              <span
-                key={level}
-                className={`h-1.5 rounded-full transition-colors ${
-                  passwordScore >= level
-                    ? strengthDetails.barColor
-                    : "bg-slate-200"
-                }`}
-              />
-            ))}
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <PasswordRule passed={passwordRules.length} text="8+ characters" />
-
-            <PasswordRule passed={passwordRules.uppercase} text="Uppercase" />
-
-            <PasswordRule passed={passwordRules.lowercase} text="Lowercase" />
-
-            <PasswordRule passed={passwordRules.number} text="One number" />
-          </div>
-        </div>
+        )}
 
         <PasswordField
           id="confirm-password"
@@ -356,6 +361,8 @@ function PasswordField({
   placeholder,
   value,
   onChange,
+  onFocus,
+  onBlur,
   error,
   visible,
   onToggle,
@@ -381,6 +388,8 @@ function PasswordField({
           type={visible ? "text" : "password"}
           value={value}
           onChange={onChange}
+          onFocus={onFocus}
+          onBlur={onBlur}
           placeholder={placeholder}
           autoComplete="new-password"
           aria-invalid={Boolean(error)}

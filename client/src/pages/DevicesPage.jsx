@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, Cpu } from "lucide-react";
+import { ArrowRight, Cpu, Crown, Eye, Sliders } from "lucide-react";
 import { CardSkeleton, EmptyState, ErrorState } from "../components/ui/StateViews";
 import { fetchDevices } from "../services/deviceApi";
 import useAsyncData from "../hooks/useAsyncData";
@@ -73,9 +73,37 @@ function DeviceCard({ device, t, language }) {
     <article className="rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm shadow-slate-900/5 transition hover:-translate-y-0.5 hover:shadow-xl dark:border-slate-800 dark:bg-slate-900/90">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="truncate text-lg font-extrabold text-slate-900 dark:text-slate-100">
-            {device.displayName}
-          </h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="truncate text-lg font-extrabold text-slate-900 dark:text-slate-100">
+              {device.displayName}
+            </h3>
+            {device.userRole && (
+              <span
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
+                  device.userRole === "owner"
+                    ? "bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300"
+                    : device.userRole === "controller"
+                    ? "bg-blue-100 text-blue-700 dark:bg-blue-950/70 dark:text-cyan-300"
+                    : "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                }`}
+              >
+                {device.userRole === "owner" ? (
+                  <Crown size={10} className="shrink-0" />
+                ) : device.userRole === "controller" ? (
+                  <Sliders size={10} className="shrink-0" />
+                ) : (
+                  <Eye size={10} className="shrink-0" />
+                )}
+                {device.userRole === "owner"
+                  ? "Owner"
+                  : device.userRole === "controller"
+                  ? "Controller"
+                  : device.userRole === "admin"
+                  ? "Admin"
+                  : "Viewer"}
+              </span>
+            )}
+          </div>
           <p className="mt-0.5 truncate font-mono text-[11px] font-bold text-slate-400 dark:text-slate-500">
             {device.deviceId}
           </p>

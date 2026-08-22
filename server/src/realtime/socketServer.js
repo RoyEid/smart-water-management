@@ -2,6 +2,7 @@ import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 import Device from "../models/Device.js";
+import DeviceMember from "../models/DeviceMember.js";
 
 let io = null;
 
@@ -44,9 +45,9 @@ export function attachSocketServer(httpServer) {
       const secret = process.env.JWT_SECRET;
       if (!secret) return next();
 
-      const decoded = jwt.verify(token, secret);
-      if (decoded?.userId) {
-        const user = await User.findById(decoded.userId).select("_id role isActive").lean();
+      const userId = decoded?.userId || decoded?.id;
+      if (userId) {
+        const user = await User.findById(userId).select("role isActive").lean();
         if (user && user.isActive !== false) {
           socket.user = { _id: String(user._id), role: user.role };
         }
@@ -64,10 +65,10 @@ export function attachSocketServer(httpServer) {
       console.log(`[Socket.IO] Admin connected: ${socket.id} (user=${socket.user._id})`);
     } else if (socket.user?.role === "user") {
       socket.join(`user:${socket.user._id}`);
-      const ownedDevices = await Device.find({ owner: socket.user._id }).distinct("deviceId");
-      ownedDevices.forEach((deviceId) => socket.join(`device:${deviceId}`));
+      const accessibleDevices = await DeviceMember.find({ user: socket.user._id }).distinct("deviceId");
+      accessibleDevices.forEach((deviceId) => socket.join(`device:${deviceId}`));
       console.log(
-        `[Socket.IO] User connected: ${socket.id} (user=${socket.user._id}, devices=${ownedDevices.join(",") || "none"})`
+        `[Socket.IO] User connected: ${socket.id} (user=${socket.user._id}, devices=${accessibleDevices.join(",") || "none"})`
       );
     } else {
       console.log(`[Socket.IO] Anonymous connected: ${socket.id}`);
@@ -78,8 +79,8 @@ export function attachSocketServer(httpServer) {
       if (socket.user?.role === "admin") {
         socket.join(`device:${deviceId}`);
       } else if (socket.user?.role === "user") {
-        const owned = await Device.findOne({ deviceId, owner: socket.user._id });
-        if (owned) {
+        const member = await DeviceMember.findOne({ deviceId, user: socket.user._id });
+        if (member) {
           socket.join(`device:${deviceId}`);
         }
       }

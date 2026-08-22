@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import useAsyncData from "../hooks/useAsyncData";
-import { ArrowLeft, Check, History, LoaderCircle, Pencil, X } from "lucide-react";
+import { ArrowLeft, Check, Crown, Eye, History, LoaderCircle, Pencil, Sliders, X } from "lucide-react";
 import {
   CardSkeleton,
   EmptyState,
@@ -9,6 +9,7 @@ import {
 } from "../components/ui/StateViews";
 import { fetchDevice, fetchTelemetryHistory, renameDevice } from "../services/deviceApi";
 import TankConfigForm from "../components/devices/TankConfigForm";
+import HouseholdMembersCard from "../components/devices/HouseholdMembersCard";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 import { useToast } from "../context/ToastContext";
@@ -160,22 +161,57 @@ export default function DeviceDetailPage() {
           </p>
         </div>
 
-        <span
-          className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[11px] font-extrabold ${
-            device.isOnline
-              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300"
-              : "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
-          }`}
-        >
+        <div className="flex flex-wrap items-center gap-2">
+          {device.userRole && (
+            <span
+              className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[11px] font-extrabold ${
+                device.userRole === "owner"
+                  ? "bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300"
+                  : device.userRole === "controller"
+                  ? "bg-blue-100 text-blue-700 dark:bg-blue-950/70 dark:text-cyan-300"
+                  : "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+              }`}
+            >
+              {device.userRole === "owner" ? (
+                <Crown size={13} className="shrink-0" />
+              ) : device.userRole === "controller" ? (
+                <Sliders size={13} className="shrink-0" />
+              ) : (
+                <Eye size={13} className="shrink-0" />
+              )}
+              {device.userRole === "owner"
+                ? "Your Access: Owner"
+                : device.userRole === "controller"
+                ? "Your Access: Controller"
+                : device.userRole === "admin"
+                ? "Platform Admin"
+                : "Your Access: Viewer"}
+            </span>
+          )}
+
           <span
-            className={`size-1.5 rounded-full ${
-              device.isOnline ? "animate-pulse bg-emerald-500" : "bg-slate-400"
+            className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[11px] font-extrabold ${
+              device.isOnline
+                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300"
+                : "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
             }`}
-            aria-hidden="true"
-          />
-          {device.isOnline ? t("deviceOnline") : t("deviceOffline")}
-        </span>
+          >
+            <span
+              className={`size-1.5 rounded-full ${
+                device.isOnline ? "animate-pulse bg-emerald-500" : "bg-slate-400"
+              }`}
+              aria-hidden="true"
+            />
+            {device.isOnline ? t("deviceOnline") : t("deviceOffline")}
+          </span>
+        </div>
       </div>
+
+      {/* Household & Access Members Card */}
+      <HouseholdMembersCard
+        deviceId={device.deviceId}
+        userRole={device.userRole || (isAdmin ? "admin" : "viewer")}
+      />
 
       {/* Identity and registry facts */}
       <section className="rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">

@@ -1,5 +1,6 @@
 import Alert from "../models/Alert.js";
 import Device from "../models/Device.js";
+import { getUserAccessibleDevices } from "../services/deviceAccessService.js";
 
 function serializeAlert(alert) {
   return {
@@ -59,11 +60,9 @@ export async function listAlerts(req, res, next) {
     let activeFilter = { isResolved: false };
 
     if (req.user?.role === "user") {
-      const ownedDevices = await Device.find({ owner: req.user._id })
-        .select("deviceId ownerAssignedAt")
-        .lean();
+      const accessibleDevices = await getUserAccessibleDevices(req.user);
 
-      if (ownedDevices.length === 0) {
+      if (accessibleDevices.length === 0) {
         return res.status(200).json({
           success: true,
           alerts: [],
@@ -79,13 +78,13 @@ export async function listAlerts(req, res, next) {
         });
       }
 
-      if (deviceId && !ownedDevices.some((d) => d.deviceId === deviceId)) {
+      if (deviceId && !accessibleDevices.some((d) => d.deviceId === deviceId)) {
         const error = new Error("You are not authorized to view alerts for this device.");
         error.statusCode = 403;
         return next(error);
       }
 
-      const scope = buildUserAlertScope(ownedDevices, deviceId);
+      const scope = buildUserAlertScope(accessibleDevices, deviceId);
       Object.assign(filter, scope);
       unreadFilter = { isRead: false, ...scope };
       activeFilter = { isResolved: false, ...scope };
@@ -131,11 +130,9 @@ export async function getRecentAlerts(req, res, next) {
     let unreadFilter = { isRead: false };
 
     if (req.user?.role === "user") {
-      const ownedDevices = await Device.find({ owner: req.user._id })
-        .select("deviceId ownerAssignedAt")
-        .lean();
+      const accessibleDevices = await getUserAccessibleDevices(req.user);
 
-      if (ownedDevices.length === 0) {
+      if (accessibleDevices.length === 0) {
         return res.status(200).json({
           success: true,
           alerts: [],
@@ -143,7 +140,7 @@ export async function getRecentAlerts(req, res, next) {
         });
       }
 
-      const scope = buildUserAlertScope(ownedDevices);
+      const scope = buildUserAlertScope(accessibleDevices);
       filter = scope;
       unreadFilter = { isRead: false, ...scope };
     }
@@ -175,17 +172,15 @@ export async function markAlertRead(req, res, next) {
 
     let unreadFilter = { isRead: false };
     if (req.user?.role === "user") {
-      const ownedDevices = await Device.find({ owner: req.user._id })
-        .select("deviceId ownerAssignedAt")
-        .lean();
+      const accessibleDevices = await getUserAccessibleDevices(req.user);
 
-      const target = ownedDevices.find((d) => d.deviceId === alert.deviceId);
+      const target = accessibleDevices.find((d) => d.deviceId === alert.deviceId);
       if (!target) {
         const error = new Error("You are not authorized to manage alerts for this device.");
         error.statusCode = 403;
         return next(error);
       }
-      const scope = buildUserAlertScope(ownedDevices);
+      const scope = buildUserAlertScope(accessibleDevices);
       unreadFilter = { isRead: false, ...scope };
     }
 
@@ -208,11 +203,9 @@ export async function markAllAlertsRead(req, res, next) {
   try {
     let filter = { isRead: false };
     if (req.user?.role === "user") {
-      const ownedDevices = await Device.find({ owner: req.user._id })
-        .select("deviceId ownerAssignedAt")
-        .lean();
+      const accessibleDevices = await getUserAccessibleDevices(req.user);
 
-      if (ownedDevices.length === 0) {
+      if (accessibleDevices.length === 0) {
         return res.status(200).json({
           success: true,
           message: "0 alert(s) marked as read.",
@@ -221,7 +214,7 @@ export async function markAllAlertsRead(req, res, next) {
         });
       }
 
-      filter = { isRead: false, ...buildUserAlertScope(ownedDevices) };
+      filter = { isRead: false, ...buildUserAlertScope(accessibleDevices) };
     }
 
     const result = await Alert.updateMany(

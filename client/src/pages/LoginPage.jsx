@@ -63,6 +63,13 @@ function LoginPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
+    // Explicitly ensure form credentials start empty on component mount
+    setFormData({
+      email: "",
+      password: "",
+      rememberMe: false,
+    });
+
     // Strips the parameter from the address bar so a refresh does not re-show
     // an error about an attempt the user has already seen. Touching history is
     // an external side effect, which is exactly what an effect is for.
@@ -179,7 +186,7 @@ function LoginPage() {
       )}
 
       {/* Login form */}
-      <form className="mt-6 space-y-4" onSubmit={handleSubmit} noValidate>
+      <form className="mt-6 space-y-4" onSubmit={handleSubmit} autoComplete="off" noValidate>
         {/* Email */}
         <div>
           <label
@@ -202,7 +209,7 @@ function LoginPage() {
               value={formData.email}
               onChange={handleChange}
               placeholder="name@example.com"
-              autoComplete="email"
+              autoComplete="username"
               aria-invalid={Boolean(errors.email)}
               aria-describedby={errors.email ? "login-email-error" : undefined}
               className={`h-13 w-full rounded-xl border bg-white pl-12 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:ring-4 ${
@@ -248,7 +255,7 @@ function LoginPage() {
               onKeyUp={checkCapsLock}
               onBlur={() => setCapsLock(false)}
               placeholder="Enter your password"
-              autoComplete="current-password"
+              autoComplete="new-password"
               aria-invalid={Boolean(errors.password)}
               aria-describedby={
                 errors.password ? "login-password-error" : undefined

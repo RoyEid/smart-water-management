@@ -1,5 +1,6 @@
 import Device from "../models/Device.js";
 import { getAnalyticsOverview } from "../services/analyticsService.js";
+import { getUserAccessibleDevices } from "../services/deviceAccessService.js";
 
 /**
  * Handles GET requests for analytics overview metrics and historical bucket aggregates.
@@ -16,11 +17,9 @@ export async function getAnalytics(req, res, next) {
     let targetDeviceId = params.deviceId || query.deviceId;
 
     if (req.user?.role === "user") {
-      const ownedDevices = await Device.find({ owner: req.user._id })
-        .select("deviceId ownerAssignedAt")
-        .lean();
+      const accessibleDevices = await getUserAccessibleDevices(req.user);
 
-      if (ownedDevices.length === 0) {
+      if (accessibleDevices.length === 0) {
         return res.status(200).json({
           success: true,
           analytics: null,
@@ -29,7 +28,7 @@ export async function getAnalytics(req, res, next) {
       }
 
       if (targetDeviceId) {
-        const owned = ownedDevices.find((d) => d.deviceId === targetDeviceId);
+        const owned = accessibleDevices.find((d) => d.deviceId === targetDeviceId);
         if (!owned) {
           const error = new Error("You are not authorized to view analytics for this device.");
           error.statusCode = 403;
@@ -41,7 +40,7 @@ export async function getAnalytics(req, res, next) {
           }
         }
       } else {
-        const owned = ownedDevices[0];
+        const owned = accessibleDevices[0];
         targetDeviceId = owned.deviceId;
         if (owned.ownerAssignedAt) {
           if (!effectiveFrom || new Date(effectiveFrom) < new Date(owned.ownerAssignedAt)) {

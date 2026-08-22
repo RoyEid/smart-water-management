@@ -6,6 +6,11 @@ import { getLatestReading } from "../services/ultrasonicReadingService.js";
 import { getDeviceControlState } from "../services/deviceControlService.js";
 import { isDeviceOnline } from "../services/deviceService.js";
 
+import {
+  getUserAccessibleDevices,
+  getDevicePermission,
+} from "../services/deviceAccessService.js";
+
 /**
  * The device list is assembled from the registry plus the live telemetry
  * service, so a device that has never reported still appears (offline, no
@@ -40,7 +45,7 @@ function serializeTankConfig(tanks) {
   };
 }
 
-function serializeDevice(device, latestReading, control) {
+export function serializeDevice(device, latestReading, control, userRole = null) {
   const online = isDeviceOnline(device.lastSeenAt);
   const isLatestDevice = latestReading?.deviceId === device.deviceId;
   const reading = isLatestDevice ? latestReading : null;
@@ -51,6 +56,8 @@ function serializeDevice(device, latestReading, control) {
     hasCustomName: Boolean(device.displayName),
     owner: device.owner ?? null,
     ownerAssignedAt: device.ownerAssignedAt ?? null,
+    userRole: userRole || device.userRole || (device.owner ? "user" : null),
+    nickname: device.nickname || "",
     tanks: serializeTankConfig(device.tanks),
     isOnline: online,
     lastSeenAt: device.lastSeenAt ?? null,
@@ -73,16 +80,16 @@ function serializeDevice(device, latestReading, control) {
 
 export async function listDevices(req, res, next) {
   try {
-    const filter = req.user?.role === "admin" ? {} : { owner: req.user._id };
-    const devices = await Device.find(filter).sort({ deviceId: 1 }).lean();
+    const accessibleDevices = await getUserAccessibleDevices(req.user);
 
     res.status(200).json({
       success: true,
-      devices: devices.map((device) =>
+      devices: accessibleDevices.map((device) =>
         serializeDevice(
           device,
           getLatestReading(device.deviceId),
-          getDeviceControlState(device.deviceId)
+          getDeviceControlState(device.deviceId),
+          device.userRole
         )
       ),
     });
@@ -93,7 +100,9 @@ export async function listDevices(req, res, next) {
 
 export async function getDevice(req, res, next) {
   try {
-    const device = await Device.findOne({ deviceId: req.params.deviceId }).lean();
+    const device = await Device.findOne({ deviceId: req.params.deviceId })
+      .populate("owner", "name email avatar")
+      .lean();
 
     if (!device) {
       const error = new Error("Device not found.");
@@ -101,12 +110,15 @@ export async function getDevice(req, res, next) {
       return next(error);
     }
 
+    let userRole = "admin";
     if (req.user?.role === "user") {
-      if (!device.owner || String(device.owner) !== String(req.user._id)) {
+      const permission = await getDevicePermission(req.user._id, device.deviceId);
+      if (!permission) {
         const error = new Error("You are not authorized to view this device.");
         error.statusCode = 403;
         return next(error);
       }
+      userRole = permission;
     }
 
     const latestReading = getLatestReading(device.deviceId);
@@ -120,7 +132,7 @@ export async function getDevice(req, res, next) {
 
     res.status(200).json({
       success: true,
-      device: serializeDevice(device, latestReading, control),
+      device: serializeDevice(device, latestReading, control, userRole),
       lastStoredReading: lastStored ? serializeStoredReading(lastStored) : null,
     });
   } catch (error) {
@@ -201,9 +213,10 @@ export async function updateTankConfig(req, res, next) {
       return next(error);
     }
 
-    // STRICT RULE: User must own the device to configure its tanks
-    if (!device.owner || String(device.owner) !== String(req.user._id)) {
-      const error = new Error("You are not authorized to configure this device.");
+    // STRICT RULE: Only the device Owner can modify tank configuration (Controllers & Viewers cannot)
+    const permission = await getDevicePermission(req.user._id, device.deviceId);
+    if (permission !== "owner") {
+      const error = new Error("Only the device owner is authorized to configure tank parameters.");
       error.statusCode = 403;
       return next(error);
     }

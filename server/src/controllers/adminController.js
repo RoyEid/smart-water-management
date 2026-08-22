@@ -1,5 +1,6 @@
 import User from "../models/User.js";
 import Device from "../models/Device.js";
+import DeviceMember from "../models/DeviceMember.js";
 import Alert from "../models/Alert.js";
 import AuditLog, { AUDIT_ACTIONS } from "../models/AuditLog.js";
 import UltrasonicReading from "../models/UltrasonicReading.js";
@@ -23,11 +24,16 @@ export async function getOverview(req, res, next) {
 
     const [
       totalUsers,
-      verifiedUsers,
+      normalUsers,
       adminUsers,
+      verifiedUsers,
       disabledUsers,
       totalDevices,
       onlineDevices,
+      totalOwners,
+      totalMembers,
+      totalControllers,
+      totalViewers,
       totalTelemetryRecords,
       openAlerts,
       criticalAlerts,
@@ -35,11 +41,16 @@ export async function getOverview(req, res, next) {
       recentActivity,
     ] = await Promise.all([
       User.countDocuments({}),
-      User.countDocuments({ isVerified: true }),
+      User.countDocuments({ role: "user" }),
       User.countDocuments({ role: "admin" }),
+      User.countDocuments({ isVerified: true }),
       User.countDocuments({ isActive: false }),
       Device.countDocuments({}),
       Device.countDocuments({ lastSeenAt: { $gte: onlineCutoff } }),
+      DeviceMember.countDocuments({ role: "owner" }),
+      DeviceMember.countDocuments({}),
+      DeviceMember.countDocuments({ role: "controller" }),
+      DeviceMember.countDocuments({ role: "viewer" }),
       UltrasonicReading.estimatedDocumentCount(),
       Alert.countDocuments({ isResolved: false }),
       Alert.countDocuments({ isResolved: false, severity: "critical" }),
@@ -55,12 +66,17 @@ export async function getOverview(req, res, next) {
       stats: {
         users: {
           total: totalUsers,
-          verified: verifiedUsers,
-          // Derived rather than counted separately so the three numbers can
-          // never disagree with each other.
-          unverified: totalUsers - verifiedUsers,
+          normal: normalUsers,
           admins: adminUsers,
+          verified: verifiedUsers,
+          unverified: totalUsers - verifiedUsers,
           disabled: disabledUsers,
+        },
+        memberships: {
+          totalOwners,
+          totalMembers,
+          totalControllers,
+          totalViewers,
         },
         devices: {
           total: totalDevices,
@@ -69,7 +85,6 @@ export async function getOverview(req, res, next) {
         },
         telemetry: {
           totalRecords: totalTelemetryRecords,
-          // null (not 0, not "now") when no device has ever reported.
           latestAt: latestReading?.receivedAt ?? null,
         },
         alerts: {
@@ -77,8 +92,6 @@ export async function getOverview(req, res, next) {
           critical: criticalAlerts,
         },
         pump: {
-          // Reflects the hardware's last reported state, which is not always
-          // the same as the requested control state — both are shown.
           status: latestReading?.pumpStatus ?? null,
           mode: control.pumpMode,
           systemEnabled: control.systemEnabled,
@@ -479,10 +492,32 @@ export async function getSystemConfig(req, res, next) {
 
 export async function getTelemetryStats(req, res, next) {
   try {
-    const devices = await Device.find({}).sort({ lastSeenAt: -1 }).lean();
+    const devices = await Device.find({})
+      .populate("owner", "name email")
+      .sort({ lastSeenAt: -1 })
+      .lean();
+
+    const memberStats = await DeviceMember.aggregate([
+      {
+        $group: {
+          _id: "$deviceId",
+          totalMembers: { $sum: 1 },
+          controllers: { $sum: { $cond: [{ $eq: ["$role", "controller"] }, 1, 0] } },
+          viewers: { $sum: { $cond: [{ $eq: ["$role", "viewer"] }, 1, 0] } },
+        },
+      },
+    ]);
+
+    const memberMap = new Map(memberStats.map((m) => [m._id, m]));
 
     const perDevice = await Promise.all(
       devices.map(async (device) => {
+        const stats = memberMap.get(device.deviceId) || {
+          totalMembers: device.owner ? 1 : 0,
+          controllers: 0,
+          viewers: 0,
+        };
+
         const [count, oldest, newest] = await Promise.all([
           UltrasonicReading.countDocuments({ deviceId: device.deviceId }),
           UltrasonicReading.findOne({ deviceId: device.deviceId })
@@ -498,7 +533,19 @@ export async function getTelemetryStats(req, res, next) {
         return {
           deviceId: device.deviceId,
           displayName: device.displayName || device.deviceId,
+          owner: device.owner
+            ? {
+                id: String(device.owner._id || device.owner),
+                name: device.owner.name || "Owner",
+                email: device.owner.email || "",
+              }
+            : null,
+          membersCount: stats.totalMembers,
+          controllersCount: stats.controllers,
+          viewersCount: stats.viewers,
           isOnline: isDeviceOnline(device.lastSeenAt),
+          lastSeenAt: device.lastSeenAt ?? null,
+          firmwareVersion: device.firmwareVersion ?? null,
           records: count,
           oldestAt: oldest?.receivedAt ?? null,
           newestAt: newest?.receivedAt ?? null,
@@ -516,96 +563,3 @@ export async function getTelemetryStats(req, res, next) {
   }
 }
 
-export async function assignDeviceOwner(req, res, next) {
-  try {
-    const { deviceId } = req.params;
-    const { userId } = req.body;
-
-    const device = await Device.findOne({ deviceId });
-    if (!device) {
-      const error = new Error("Device not found.");
-      error.statusCode = 404;
-      return next(error);
-    }
-
-    const previousOwner = device.owner ? String(device.owner) : null;
-
-    if (userId) {
-      const targetUser = await User.findById(userId);
-      if (!targetUser) {
-        const error = new Error("User not found.");
-        error.statusCode = 404;
-        return next(error);
-      }
-
-      if (targetUser.role !== "user") {
-        const error = new Error("Devices can only be assigned to accounts with the 'user' role. Administrators cannot be device owners.");
-        error.statusCode = 400;
-        return next(error);
-      }
-
-      if (targetUser.isActive === false) {
-        const error = new Error("Cannot assign a device to a disabled user account.");
-        error.statusCode = 400;
-        return next(error);
-      }
-
-      device.owner = targetUser._id;
-      device.ownerAssignedAt = new Date();
-      await device.save();
-
-      await recordAudit({
-        req,
-        action: previousOwner ? AUDIT_ACTIONS.DEVICE_REASSIGNED : AUDIT_ACTIONS.DEVICE_ASSIGNED,
-        targetType: "device",
-        targetId: device.deviceId,
-        targetLabel: device.displayName || device.deviceId,
-        metadata: {
-          previousOwner,
-          newOwner: String(targetUser._id),
-          newOwnerEmail: targetUser.email,
-        },
-      });
-
-      res.status(200).json({
-        success: true,
-        message: `Device ${device.deviceId} assigned to ${targetUser.email}.`,
-        device: {
-          deviceId: device.deviceId,
-          displayName: device.displayName || device.deviceId,
-          owner: device.owner,
-          ownerAssignedAt: device.ownerAssignedAt,
-        },
-      });
-    } else {
-      // Unassign device
-      device.owner = null;
-      device.ownerAssignedAt = null;
-      await device.save();
-
-      await recordAudit({
-        req,
-        action: AUDIT_ACTIONS.DEVICE_UNASSIGNED,
-        targetType: "device",
-        targetId: device.deviceId,
-        targetLabel: device.displayName || device.deviceId,
-        metadata: {
-          previousOwner,
-        },
-      });
-
-      res.status(200).json({
-        success: true,
-        message: `Device ${device.deviceId} unassigned.`,
-        device: {
-          deviceId: device.deviceId,
-          displayName: device.displayName || device.deviceId,
-          owner: null,
-          ownerAssignedAt: null,
-        },
-      });
-    }
-  } catch (error) {
-    next(error);
-  }
-}

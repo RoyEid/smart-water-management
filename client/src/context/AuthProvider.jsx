@@ -9,6 +9,7 @@ import api from "../services/api";
 import sensorSocket from "../services/socket";
 import { getApiErrorMessage, isUnauthorized } from "../utils/apiError";
 import { AuthContext } from "./AuthContext";
+import { THEME_KEY, applyThemeToDocument } from "./ThemeContext";
 
 /**
  * Single owner of "who is signed in".
@@ -88,6 +89,10 @@ export function AuthProvider({ children }) {
       // is cleared regardless so the UI never claims to be signed in after the
       // user asked to leave.
     } finally {
+      // Clear any cached theme from previous session and immediately force light mode
+      localStorage.removeItem(THEME_KEY);
+      applyThemeToDocument(false);
+
       if (mountedRef.current) {
         setSession({ user: null, status: "anonymous", error: "" });
       }

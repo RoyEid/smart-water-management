@@ -3,303 +3,310 @@ import assert from "node:assert/strict";
 import { AUDIT_ACTIONS } from "../models/AuditLog.js";
 
 /**
- * 24 Comprehensive Authorization & Role Separation Test Scenarios
+ * Comprehensive Authorization & Per-Device Role Separation Test Suite
+ *
+ * Matrix:
+ * - Platform Admin
+ * - Device Owner
+ * - Device Controller
+ * - Device Viewer
+ * - Unauthorized User
  */
 
-// Simulated authorization evaluator functions based on actual backend controller implementations
-function evaluateDeviceAccess(user, device) {
+// Simulated Evaluators mirroring the backend controllers & services
+function evaluateDeviceAccess(user, device, membershipRole) {
   if (!device) return { status: 404, message: "Device not found." };
-  if (user.role === "admin") return { status: 200, allowed: true };
+  if (user.role === "admin") return { status: 200, allowed: true, role: "admin" };
   if (user.role === "user") {
-    if (device.owner && String(device.owner) === String(user._id)) {
-      return { status: 200, allowed: true };
+    if (membershipRole && ["owner", "controller", "viewer"].includes(membershipRole)) {
+      return { status: 200, allowed: true, role: membershipRole };
     }
     return { status: 403, message: "You are not authorized to view this device." };
   }
   return { status: 403, message: "Forbidden" };
 }
 
-function evaluateTankConfigUpdate(user, device, payload) {
+function evaluateTankConfigUpdate(user, device, membershipRole, payload) {
   if (user.role === "admin") {
     return { status: 403, message: "Administrators are not permitted to modify device tank parameters." };
   }
   if (!device) return { status: 404, message: "Device not found." };
-  if (!device.owner || String(device.owner) !== String(user._id)) {
-    return { status: 403, message: "You are not authorized to configure this device." };
+  if (membershipRole !== "owner") {
+    return { status: 403, message: "Only the device owner is authorized to configure tank parameters." };
   }
   return { status: 200, allowed: true, updatedConfig: payload };
 }
 
-function evaluateDeviceControl(user, device, command) {
+function evaluateDeviceControl(user, device, membershipRole, command) {
   if (user.role === "admin") {
     return { status: 403, message: "Administrators are not permitted to operate physical device controls." };
   }
   if (!device) return { status: 404, message: "Device not found." };
-  if (!device.owner || String(device.owner) !== String(user._id)) {
+  if (!membershipRole) {
     return { status: 403, message: "You are not authorized to operate controls for this device." };
   }
-  return { status: 200, allowed: true, appliedCommand: command };
+  if (membershipRole === "viewer") {
+    return { status: 403, message: "Viewers have read-only access and cannot operate device controls." };
+  }
+  if (["owner", "controller"].includes(membershipRole)) {
+    return { status: 200, allowed: true, appliedCommand: command };
+  }
+  return { status: 403, message: "Forbidden" };
 }
 
-function evaluateTelemetryAccess(user, userDevices, queryDeviceId) {
+function evaluateMemberManagement(actorUser, device, actorMembershipRole, action, targetMember) {
+  if (actorUser.role === "admin") {
+    return { status: 403, message: "Administrators do not manage household members." };
+  }
+  if (!device) return { status: 404, message: "Device not found." };
+  if (actorMembershipRole !== "owner") {
+    return { status: 403, message: "Only the device owner can manage household members." };
+  }
+
+  if (action === "ADD") {
+    if (!targetMember.email) return { status: 400, message: "Email required." };
+    if (!["controller", "viewer"].includes(targetMember.role)) {
+      return { status: 400, message: "Role must be controller or viewer." };
+    }
+    return { status: 201, success: true, added: targetMember };
+  }
+
+  if (action === "CHANGE_ROLE") {
+    if (targetMember.role === "owner") {
+      return { status: 403, message: "The device owner's role cannot be modified." };
+    }
+    return { status: 200, success: true, updated: targetMember };
+  }
+
+  if (action === "REMOVE") {
+    if (targetMember.role === "owner") {
+      return { status: 403, message: "The device owner cannot be removed from their own device." };
+    }
+    return { status: 200, success: true, removed: targetMember.userId };
+  }
+
+  return { status: 400, message: "Invalid action." };
+}
+
+function evaluateTelemetryAccess(user, userAccessibleDevices, queryDeviceId) {
   if (user.role === "admin") return { status: 200, allowed: true };
   if (queryDeviceId) {
-    if (!userDevices.includes(queryDeviceId)) {
+    if (!userAccessibleDevices.includes(queryDeviceId)) {
       return { status: 403, message: "You are not authorized to view telemetry for this device." };
     }
     return { status: 200, allowed: true, targetDeviceId: queryDeviceId };
   }
-  return { status: 200, allowed: true, targetDevices: userDevices };
+  return { status: 200, allowed: true, targetDevices: userAccessibleDevices };
 }
 
-function evaluateAnalyticsAccess(user, userDevices, queryDeviceId) {
-  if (user.role === "admin") return { status: 200, allowed: true };
-  if (!userDevices.includes(queryDeviceId)) {
-    return { status: 403, message: "You are not authorized to view analytics for this device." };
-  }
-  return { status: 200, allowed: true, targetDeviceId: queryDeviceId };
-}
+/* =========================================================================
+ * 1. OWNER PERMISSIONS
+ * ========================================================================= */
 
-function evaluateDeviceAssignment(adminUser, targetUser, device) {
-  if (adminUser.role !== "admin") {
-    return { status: 403, message: "Only administrators can assign devices." };
-  }
-  if (!device) return { status: 404, message: "Device not found." };
-  if (targetUser) {
-    if (targetUser.role !== "user") {
-      return {
-        status: 400,
-        message: "Devices can only be assigned to accounts with the 'user' role. Administrators cannot be device owners.",
-      };
-    }
-    if (targetUser.isActive === false) {
-      return { status: 400, message: "Cannot assign device to a disabled user account." };
-    }
-    return {
-      status: 200,
-      assigned: true,
-      newOwner: targetUser._id,
-      preservedTanks: device.tanks,
-    };
-  }
-  return { status: 200, assigned: true, newOwner: null, preservedTanks: device.tanks };
-}
-
-// 1. Normal user can view assigned device
-test("1. Normal user can view assigned device", () => {
-  const user = { _id: "user-1", role: "user" };
-  const device = { deviceId: "tank-01", owner: "user-1" };
-  const res = evaluateDeviceAccess(user, device);
+test("Owner can read telemetry", () => {
+  const user = { _id: "roy-1", role: "user" };
+  const device = { deviceId: "tank-01", owner: "roy-1" };
+  const res = evaluateTelemetryAccess(user, ["tank-01"], "tank-01");
   assert.equal(res.status, 200);
   assert.equal(res.allowed, true);
 });
 
-// 2. Normal user cannot view unassigned / other user's device (403)
-test("2. Normal user cannot view unassigned or other user's device", () => {
-  const user = { _id: "user-1", role: "user" };
-  const otherDevice = { deviceId: "tank-02", owner: "user-2" };
-  const unassignedDevice = { deviceId: "tank-03", owner: null };
+test("Owner can operate pump controls (AUTO/MANUAL, ON/OFF, Moteur permission)", () => {
+  const user = { _id: "roy-1", role: "user" };
+  const device = { deviceId: "tank-01", owner: "roy-1" };
 
-  assert.equal(evaluateDeviceAccess(user, otherDevice).status, 403);
-  assert.equal(evaluateDeviceAccess(user, unassignedDevice).status, 403);
-});
+  const resMode = evaluateDeviceControl(user, device, "owner", { pumpMode: "MANUAL" });
+  assert.equal(resMode.status, 200);
 
-// 3. Normal user can configure assigned device tanks
-test("3. Normal user can configure assigned device tanks", () => {
-  const user = { _id: "user-1", role: "user" };
-  const device = { deviceId: "tank-01", owner: "user-1" };
-  const payload = { upper: { capacityLiters: 1000, heightMeters: 2.5 } };
-  const res = evaluateTankConfigUpdate(user, device, payload);
-  assert.equal(res.status, 200);
-  assert.equal(res.allowed, true);
-});
-
-// 4. Normal user cannot configure other user's device tanks (403)
-test("4. Normal user cannot configure other user's device tanks", () => {
-  const user = { _id: "user-1", role: "user" };
-  const device = { deviceId: "tank-02", owner: "user-2" };
-  const res = evaluateTankConfigUpdate(user, device, {});
-  assert.equal(res.status, 403);
-});
-
-// 5. Admin cannot configure tank parameters (403)
-test("5. Admin cannot configure tank parameters (403)", () => {
-  const admin = { _id: "admin-1", role: "admin" };
-  const device = { deviceId: "tank-01", owner: "user-1" };
-  const res = evaluateTankConfigUpdate(admin, device, {});
-  assert.equal(res.status, 403);
-  assert.equal(res.message, "Administrators are not permitted to modify device tank parameters.");
-});
-
-// 6. Normal user can toggle pump mode (AUTO/MANUAL) on assigned device
-test("6. Normal user can toggle pump mode on assigned device", () => {
-  const user = { _id: "user-1", role: "user" };
-  const device = { deviceId: "tank-01", owner: "user-1" };
-  const res = evaluateDeviceControl(user, device, { pumpMode: "MANUAL" });
-  assert.equal(res.status, 200);
-  assert.equal(res.appliedCommand.pumpMode, "MANUAL");
-});
-
-// 7. Normal user can turn pump ON / OFF manually on assigned device
-test("7. Normal user can turn pump ON / OFF manually on assigned device", () => {
-  const user = { _id: "user-1", role: "user" };
-  const device = { deviceId: "tank-01", owner: "user-1" };
-  const resOn = evaluateDeviceControl(user, device, { manualPumpState: "ON" });
-  const resOff = evaluateDeviceControl(user, device, { manualPumpState: "OFF" });
+  const resOn = evaluateDeviceControl(user, device, "owner", { manualPumpState: "ON" });
   assert.equal(resOn.status, 200);
+
+  const resMoteur = evaluateDeviceControl(user, device, "owner", { allowPumpOnMoteur: true });
+  assert.equal(resMoteur.status, 200);
+});
+
+test("Owner can configure tank physical dimensions and capacities", () => {
+  const user = { _id: "roy-1", role: "user" };
+  const device = { deviceId: "tank-01", owner: "roy-1" };
+  const payload = { upper: { capacityLiters: 5000, heightMeters: 3 }, lower: { capacityLiters: 10000, heightMeters: 4 } };
+  const res = evaluateTankConfigUpdate(user, device, "owner", payload);
+  assert.equal(res.status, 200);
+  assert.equal(res.allowed, true);
+});
+
+test("Owner can add a household member as Controller or Viewer", () => {
+  const user = { _id: "roy-1", role: "user" };
+  const device = { deviceId: "tank-01", owner: "roy-1" };
+  const dadMember = { email: "dad@example.com", role: "controller", nickname: "Dad" };
+  const momMember = { email: "mom@example.com", role: "viewer", nickname: "Mom" };
+
+  const resDad = evaluateMemberManagement(user, device, "owner", "ADD", dadMember);
+  assert.equal(resDad.status, 201);
+
+  const resMom = evaluateMemberManagement(user, device, "owner", "ADD", momMember);
+  assert.equal(resMom.status, 201);
+});
+
+test("Owner can change a member's role (Controller <-> Viewer) and remove a member", () => {
+  const user = { _id: "roy-1", role: "user" };
+  const device = { deviceId: "tank-01", owner: "roy-1" };
+  const targetMember = { userId: "user-dad", role: "controller" };
+
+  const resChange = evaluateMemberManagement(user, device, "owner", "CHANGE_ROLE", targetMember);
+  assert.equal(resChange.status, 200);
+
+  const resRemove = evaluateMemberManagement(user, device, "owner", "REMOVE", targetMember);
+  assert.equal(resRemove.status, 200);
+});
+
+test("Owner cannot remove themselves from their own device", () => {
+  const user = { _id: "roy-1", role: "user" };
+  const device = { deviceId: "tank-01", owner: "roy-1" };
+  const ownerMember = { userId: "roy-1", role: "owner" };
+
+  const res = evaluateMemberManagement(user, device, "owner", "REMOVE", ownerMember);
+  assert.equal(res.status, 403);
+  assert.match(res.message, /owner cannot be removed/);
+});
+
+/* =========================================================================
+ * 2. CONTROLLER PERMISSIONS
+ * ========================================================================= */
+
+test("Controller can read telemetry and view sensor readings", () => {
+  const user = { _id: "dad-1", role: "user" };
+  const device = { deviceId: "tank-01", owner: "roy-1" };
+  const res = evaluateTelemetryAccess(user, ["tank-01"], "tank-01");
+  assert.equal(res.status, 200);
+});
+
+test("Controller can control pump ON/OFF and toggle Auto/Manual mode", () => {
+  const user = { _id: "dad-1", role: "user" };
+  const device = { deviceId: "tank-01", owner: "roy-1" };
+
+  const resMode = evaluateDeviceControl(user, device, "controller", { pumpMode: "MANUAL" });
+  assert.equal(resMode.status, 200);
+
+  const resOff = evaluateDeviceControl(user, device, "controller", { manualPumpState: "OFF" });
   assert.equal(resOff.status, 200);
 });
 
-// 8. Normal user can toggle system enable / disable on assigned device
-test("8. Normal user can toggle system enable / disable on assigned device", () => {
-  const user = { _id: "user-1", role: "user" };
-  const device = { deviceId: "tank-01", owner: "user-1" };
-  const res = evaluateDeviceControl(user, device, { systemEnabled: false });
-  assert.equal(res.status, 200);
-  assert.equal(res.appliedCommand.systemEnabled, false);
-});
-
-// 9. Normal user can toggle Moteur pump permission on assigned device
-test("9. Normal user can toggle Moteur pump permission on assigned device", () => {
-  const user = { _id: "user-1", role: "user" };
-  const device = { deviceId: "tank-01", owner: "user-1" };
-  const res = evaluateDeviceControl(user, device, { allowPumpOnMoteur: true });
-  assert.equal(res.status, 200);
-  assert.equal(res.appliedCommand.allowPumpOnMoteur, true);
-});
-
-// 10. Admin cannot toggle pump mode (AUTO/MANUAL) (403)
-test("10. Admin cannot toggle pump mode (403)", () => {
-  const admin = { _id: "admin-1", role: "admin" };
-  const device = { deviceId: "tank-01", owner: "user-1" };
-  const res = evaluateDeviceControl(admin, device, { pumpMode: "MANUAL" });
+test("Controller CANNOT configure tank physical parameters (403)", () => {
+  const user = { _id: "dad-1", role: "user" };
+  const device = { deviceId: "tank-01", owner: "roy-1" };
+  const res = evaluateTankConfigUpdate(user, device, "controller", {});
   assert.equal(res.status, 403);
+  assert.match(res.message, /owner is authorized/);
 });
 
-// 11. Admin cannot turn pump ON / OFF manually (403)
-test("11. Admin cannot turn pump ON / OFF manually (403)", () => {
-  const admin = { _id: "admin-1", role: "admin" };
-  const device = { deviceId: "tank-01", owner: "user-1" };
-  const res = evaluateDeviceControl(admin, device, { manualPumpState: "ON" });
-  assert.equal(res.status, 403);
+test("Controller CANNOT add, remove, or change household members (403)", () => {
+  const user = { _id: "dad-1", role: "user" };
+  const device = { deviceId: "tank-01", owner: "roy-1" };
+  const newMember = { email: "friend@example.com", role: "viewer" };
+
+  const resAdd = evaluateMemberManagement(user, device, "controller", "ADD", newMember);
+  assert.equal(resAdd.status, 403);
+
+  const resRemove = evaluateMemberManagement(user, device, "controller", "REMOVE", { userId: "mom-1", role: "viewer" });
+  assert.equal(resRemove.status, 403);
 });
 
-// 12. Admin cannot toggle system enable / disable (403)
-test("12. Admin cannot toggle system enable / disable (403)", () => {
-  const admin = { _id: "admin-1", role: "admin" };
-  const device = { deviceId: "tank-01", owner: "user-1" };
-  const res = evaluateDeviceControl(admin, device, { systemEnabled: false });
-  assert.equal(res.status, 403);
-});
+/* =========================================================================
+ * 3. VIEWER PERMISSIONS
+ * ========================================================================= */
 
-// 13. Admin cannot toggle Moteur pump permission (403)
-test("13. Admin cannot toggle Moteur pump permission (403)", () => {
-  const admin = { _id: "admin-1", role: "admin" };
-  const device = { deviceId: "tank-01", owner: "user-1" };
-  const res = evaluateDeviceControl(admin, device, { allowPumpOnMoteur: true });
-  assert.equal(res.status, 403);
-});
-
-// 14. Normal user cannot operate pump controls for unassigned / other user's device (403)
-test("14. Normal user cannot operate pump controls for unassigned or other user's device", () => {
-  const user = { _id: "user-1", role: "user" };
-  const otherDevice = { deviceId: "tank-02", owner: "user-2" };
-  const unassigned = { deviceId: "tank-03", owner: null };
-  assert.equal(evaluateDeviceControl(user, otherDevice, { manualPumpState: "ON" }).status, 403);
-  assert.equal(evaluateDeviceControl(user, unassigned, { manualPumpState: "ON" }).status, 403);
-});
-
-// 15. Admin can monitor all devices (GET /api/devices returns all)
-test("15. Admin can monitor all devices", () => {
-  const admin = { _id: "admin-1", role: "admin" };
-  const devices = [{ deviceId: "tank-01", owner: "user-1" }, { deviceId: "tank-02", owner: "user-2" }];
-  const visible = devices.filter((d) => admin.role === "admin" || d.owner === admin._id);
-  assert.equal(visible.length, 2);
-});
-
-// 16. Normal user only sees assigned devices
-test("16. Normal user only sees assigned devices", () => {
-  const user = { _id: "user-1", role: "user" };
-  const devices = [{ deviceId: "tank-01", owner: "user-1" }, { deviceId: "tank-02", owner: "user-2" }];
-  const visible = devices.filter((d) => user.role === "admin" || d.owner === user._id);
-  assert.equal(visible.length, 1);
-  assert.equal(visible[0].deviceId, "tank-01");
-});
-
-// 17. Admin can query telemetry history for any device
-test("17. Admin can query telemetry history for any device", () => {
-  const admin = { _id: "admin-1", role: "admin" };
-  const res = evaluateTelemetryAccess(admin, [], "tank-02");
+test("Viewer can read telemetry and sensor levels", () => {
+  const user = { _id: "mom-1", role: "user" };
+  const device = { deviceId: "tank-01", owner: "roy-1" };
+  const res = evaluateTelemetryAccess(user, ["tank-01"], "tank-01");
   assert.equal(res.status, 200);
 });
 
-// 18. Normal user querying another user's device telemetry gets 403
-test("18. Normal user querying another user's device telemetry gets 403", () => {
-  const user = { _id: "user-1", role: "user" };
-  const userDevices = ["tank-01"];
-  const res = evaluateTelemetryAccess(user, userDevices, "tank-02");
+test("Viewer CANNOT operate pump controls (403)", () => {
+  const user = { _id: "mom-1", role: "user" };
+  const device = { deviceId: "tank-01", owner: "roy-1" };
+
+  const resControl = evaluateDeviceControl(user, device, "viewer", { manualPumpState: "ON" });
+  assert.equal(resControl.status, 403);
+  assert.match(resControl.message, /Viewers have read-only access/);
+
+  const resMode = evaluateDeviceControl(user, device, "viewer", { pumpMode: "MANUAL" });
+  assert.equal(resMode.status, 403);
+});
+
+test("Viewer CANNOT configure tank physical parameters (403)", () => {
+  const user = { _id: "mom-1", role: "user" };
+  const device = { deviceId: "tank-01", owner: "roy-1" };
+  const res = evaluateTankConfigUpdate(user, device, "viewer", {});
   assert.equal(res.status, 403);
 });
 
-// 19. Admin can query analytics for any device
-test("19. Admin can query analytics for any device", () => {
-  const admin = { _id: "admin-1", role: "admin" };
-  const res = evaluateAnalyticsAccess(admin, [], "tank-02");
-  assert.equal(res.status, 200);
-});
-
-// 20. Normal user querying another user's device analytics gets 403
-test("20. Normal user querying another user's device analytics gets 403", () => {
-  const user = { _id: "user-1", role: "user" };
-  const userDevices = ["tank-01"];
-  const res = evaluateAnalyticsAccess(user, userDevices, "tank-02");
+test("Viewer CANNOT manage household members (403)", () => {
+  const user = { _id: "mom-1", role: "user" };
+  const device = { deviceId: "tank-01", owner: "roy-1" };
+  const res = evaluateMemberManagement(user, device, "viewer", "ADD", { email: "test@example.com" });
   assert.equal(res.status, 403);
 });
 
-// 21. Admin can assign device to an account with role === 'user'
-test("21. Admin can assign device to an account with role === 'user'", () => {
+/* =========================================================================
+ * 4. PLATFORM ADMIN RESPONSIBILITIES
+ * ========================================================================= */
+
+test("Platform Admin can access platform overview and telemetry statistics", () => {
   const admin = { _id: "admin-1", role: "admin" };
-  const targetUser = { _id: "user-2", role: "user", isActive: true };
-  const device = { deviceId: "tank-02", owner: null, tanks: { upper: { capacityLiters: 1000 } } };
-  const res = evaluateDeviceAssignment(admin, targetUser, device);
+  const res = evaluateTelemetryAccess(admin, [], "tank-01");
   assert.equal(res.status, 200);
-  assert.equal(res.newOwner, "user-2");
+  assert.equal(res.allowed, true);
 });
 
-// 22. Admin cannot assign device to an account with role === 'admin' (400)
-test("22. Admin cannot assign device to an account with role === 'admin' (400)", () => {
+test("Platform Admin CANNOT operate physical pump controls (403)", () => {
   const admin = { _id: "admin-1", role: "admin" };
-  const targetAdmin = { _id: "admin-2", role: "admin", isActive: true };
-  const device = { deviceId: "tank-02", owner: null };
-  const res = evaluateDeviceAssignment(admin, targetAdmin, device);
-  assert.equal(res.status, 400);
-  assert.match(res.message, /Administrators cannot be device owners/);
+  const device = { deviceId: "tank-01", owner: "roy-1" };
+  const res = evaluateDeviceControl(admin, device, "admin", { manualPumpState: "ON" });
+  assert.equal(res.status, 403);
+  assert.match(res.message, /Administrators are not permitted to operate physical device controls/);
 });
 
-// 23. Device reassignment preserves tank configuration
-test("23. Device reassignment preserves tank configuration", () => {
+test("Platform Admin CANNOT modify tank physical configuration (403)", () => {
   const admin = { _id: "admin-1", role: "admin" };
-  const newUser = { _id: "user-3", role: "user", isActive: true };
-  const existingDevice = {
-    deviceId: "tank-01",
-    owner: "user-1",
-    tanks: { upper: { capacityLiters: 5000, heightMeters: 3.5 }, lower: { capacityLiters: 8000, heightMeters: 4.0 } },
-  };
-  const res = evaluateDeviceAssignment(admin, newUser, existingDevice);
-  assert.equal(res.status, 200);
-  assert.deepEqual(res.preservedTanks, existingDevice.tanks);
+  const device = { deviceId: "tank-01", owner: "roy-1" };
+  const res = evaluateTankConfigUpdate(admin, device, "admin", {});
+  assert.equal(res.status, 403);
+  assert.match(res.message, /Administrators are not permitted to modify device tank parameters/);
 });
 
-// 24. Audit logs are recorded for device assignment, pump controls, and tank config
-test("24. Audit logs are recorded for device assignment, pump controls, and tank config", () => {
-  assert.equal(AUDIT_ACTIONS.DEVICE_ASSIGNED, "DEVICE_ASSIGNED");
-  assert.equal(AUDIT_ACTIONS.DEVICE_REASSIGNED, "DEVICE_REASSIGNED");
-  assert.equal(AUDIT_ACTIONS.DEVICE_UNASSIGNED, "DEVICE_UNASSIGNED");
-  assert.equal(AUDIT_ACTIONS.PUMP_MODE_CHANGED, "PUMP_MODE_CHANGED");
-  assert.equal(AUDIT_ACTIONS.MANUAL_PUMP_COMMAND, "MANUAL_PUMP_COMMAND");
-  assert.equal(AUDIT_ACTIONS.SYSTEM_ENABLED, "SYSTEM_ENABLED");
-  assert.equal(AUDIT_ACTIONS.SYSTEM_DISABLED, "SYSTEM_DISABLED");
-  assert.equal(AUDIT_ACTIONS.MOTEUR_PUMP_PERMISSION_ENABLED, "MOTEUR_PUMP_PERMISSION_ENABLED");
-  assert.equal(AUDIT_ACTIONS.MOTEUR_PUMP_PERMISSION_DISABLED, "MOTEUR_PUMP_PERMISSION_DISABLED");
-  assert.equal(AUDIT_ACTIONS.TANK_CONFIG_UPDATED, "TANK_CONFIG_UPDATED");
+/* =========================================================================
+ * 5. MULTI-USER ACCESS & ISOLATION
+ * ========================================================================= */
+
+test("Multiple authorized users (Owner, Controller, Viewer) can access the same tank simultaneously", () => {
+  const device = { deviceId: "tank-01", owner: "roy-1" };
+
+  const roy = { _id: "roy-1", role: "user" };
+  const dad = { _id: "dad-1", role: "user" };
+  const mom = { _id: "mom-1", role: "user" };
+
+  assert.equal(evaluateDeviceAccess(roy, device, "owner").status, 200);
+  assert.equal(evaluateDeviceAccess(dad, device, "controller").status, 200);
+  assert.equal(evaluateDeviceAccess(mom, device, "viewer").status, 200);
+});
+
+test("Unauthorized user with no membership is rejected with 403", () => {
+  const stranger = { _id: "stranger-99", role: "user" };
+  const device = { deviceId: "tank-01", owner: "roy-1" };
+
+  const resDevice = evaluateDeviceAccess(stranger, device, null);
+  assert.equal(resDevice.status, 403);
+
+  const resTelemetry = evaluateTelemetryAccess(stranger, ["tank-02"], "tank-01");
+  assert.equal(resTelemetry.status, 403);
+
+  const resControl = evaluateDeviceControl(stranger, device, null, { manualPumpState: "ON" });
+  assert.equal(resControl.status, 403);
+});
+
+test("Audit logs define member management actions", () => {
+  assert.equal(AUDIT_ACTIONS.DEVICE_MEMBER_ADDED, "DEVICE_MEMBER_ADDED");
+  assert.equal(AUDIT_ACTIONS.DEVICE_MEMBER_REMOVED, "DEVICE_MEMBER_REMOVED");
+  assert.equal(AUDIT_ACTIONS.DEVICE_MEMBER_ROLE_CHANGED, "DEVICE_MEMBER_ROLE_CHANGED");
 });
