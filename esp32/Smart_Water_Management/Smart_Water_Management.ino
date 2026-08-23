@@ -10,7 +10,7 @@
 // Must be the LAN IP of the machine, never localhost / 127.0.0.1.
 // Re-check with "ipconfig" whenever the laptop rejoins the hotspot,
 // because DHCP can hand out a different address.
-#define SERVER_HOST "10.110.55.157"
+#define SERVER_HOST "10.134.98.157"
 #define SERVER_PORT "5000"
 
 // Built from the parts above so the two endpoints can never drift apart

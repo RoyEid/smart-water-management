@@ -43,14 +43,22 @@ export function attachSocketServer(httpServer) {
       }
 
       const secret = process.env.JWT_SECRET;
-      if (!secret) return next();
+      if (!secret) {
+        socket.user = null;
+        return next();
+      }
 
+      const decoded = jwt.verify(token, secret);
       const userId = decoded?.userId || decoded?.id;
       if (userId) {
         const user = await User.findById(userId).select("role isActive").lean();
         if (user && user.isActive !== false) {
           socket.user = { _id: String(user._id), role: user.role };
+        } else {
+          socket.user = null;
         }
+      } else {
+        socket.user = null;
       }
       next();
     } catch {
