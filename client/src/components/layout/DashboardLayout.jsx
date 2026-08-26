@@ -82,6 +82,7 @@ export default function DashboardLayout() {
           <TopHeader
             pageTitle={pageTitle}
             deviceId={telemetry.device?.deviceId || telemetry.reading?.deviceId || null}
+            deviceName={telemetry.device?.displayName || null}
             isOnline={telemetry.isOnline}
             onOpenMobileMenu={openMobileMenu}
           />

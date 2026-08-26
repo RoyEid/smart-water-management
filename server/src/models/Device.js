@@ -56,6 +56,17 @@ const deviceSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    // One-time physical pairing code for secure ownership claiming of newly reporting hardware
+    claimCode: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    claimCodeHash: {
+      type: String,
+      default: null,
+      trim: true,
+    },
     // Physical tank configuration (configured by device owner)
     tanks: {
       upper: {

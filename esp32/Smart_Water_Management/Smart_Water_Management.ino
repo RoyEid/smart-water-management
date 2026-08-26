@@ -1,6 +1,7 @@
-#include <WiFi.h>
-#include <HTTPClient.h>
 #include "secrets.h"
+#include <HTTPClient.h>
+#include <WiFi.h>
+
 
 // =====================================
 // Backend configuration
@@ -10,20 +11,20 @@
 // Must be the LAN IP of the machine, never localhost / 127.0.0.1.
 // Re-check with "ipconfig" whenever the laptop rejoins the hotspot,
 // because DHCP can hand out a different address.
-#define SERVER_HOST "10.134.98.157"
+#define SERVER_HOST "10.41.160.157"
 #define SERVER_PORT "5000"
 
 // Built from the parts above so the two endpoints can never drift apart
 // and no stray character can sneak into the scheme.
 #define SERVER_BASE_URL "http://" SERVER_HOST ":" SERVER_PORT
 
-const char* SERVER_URL = SERVER_BASE_URL "/api/sensors/ultrasonic";
-const char* CONTROL_URL = SERVER_BASE_URL "/api/device/control";
+const char *SERVER_URL = SERVER_BASE_URL "/api/sensors/ultrasonic";
+const char *CONTROL_URL = SERVER_BASE_URL "/api/device/control";
 
 // Fail fast instead of stalling the pump loop on an unreachable backend.
 const uint16_t HTTP_TIMEOUT_MS = 5000;
 
-const char* DEVICE_ID = "tank-01";
+const char *DEVICE_ID = "tank-01";
 
 // =====================================
 // Pins
@@ -47,8 +48,8 @@ const int RELAY_PIN = 5;
 // Synced dynamically from backend. Retained in memory across network drops.
 float upperTankUsableHeightCm = 20.0; // Fallback default until synced
 float lowerTankUsableHeightCm = 20.0; // Fallback default until synced
-float upperCapacityLiters = 1000.0;    // Fallback default until synced
-float lowerCapacityLiters = 1000.0;    // Fallback default until synced
+float upperCapacityLiters = 1000.0;   // Fallback default until synced
+float lowerCapacityLiters = 1000.0;   // Fallback default until synced
 
 // Internal mounting dead-zone (sensor face to full water mark)
 const float SENSOR_MOUNTING_OFFSET_CM = 5.0;
@@ -96,11 +97,13 @@ const unsigned long CONTROL_FETCH_INTERVAL = 2000;
 // Signal pin. GPIO 4 is deliberately avoided because it drives the relay.
 const int FLOW_SENSOR_PIN = 18;
 
-// Debounce / loss timeout so detection is stable and does not flicker on individual missed pulses.
+// Debounce / loss timeout so detection is stable and does not flicker on
+// individual missed pulses.
 const unsigned long FLOW_OFF_TIMEOUT_MS = 2000;
 const unsigned long FLOW_EVAL_INTERVAL_MS = 200;
 
-// Incremented in the ISR on every falling edge, then copied and cleared under a short critical section.
+// Incremented in the ISR on every falling edge, then copied and cleared under a
+// short critical section.
 volatile uint32_t flowPulseCount = 0;
 portMUX_TYPE flowMux = portMUX_INITIALIZER_UNLOCKED;
 
@@ -125,10 +128,13 @@ void IRAM_ATTR pulseCounter() {
 const int VOLTAGE_SENSOR_PIN = 3;
 
 // ZMPT101B AC voltage presence sampling parameters:
-// Samples AC sinusoidal waveform over a 40 ms window (2 full cycles of 50 Hz or 2.4 cycles of 60 Hz).
+// Samples AC sinusoidal waveform over a 40 ms window (2 full cycles of 50 Hz
+// or 2.4 cycles of 60 Hz).
 const unsigned long VOLTAGE_SAMPLE_WINDOW_MS = 40;
-const int VOLTAGE_PEAK_TO_PEAK_THRESHOLD = 300; // ADC counts (out of 4095) above baseline DC noise
-const unsigned long POWER_SOURCE_DEBOUNCE_MS = 600; // Confirmation window to prevent flicker
+const int VOLTAGE_PEAK_TO_PEAK_THRESHOLD =
+    300; // ADC counts (out of 4095) above baseline DC noise
+const unsigned long POWER_SOURCE_DEBOUNCE_MS =
+    600; // Confirmation window to prevent flicker
 const unsigned long POWER_SOURCE_EVAL_INTERVAL_MS = 100;
 
 // Power source state: "DAWLE" or "MOTEUR" (defaults safely to MOTEUR)
@@ -152,42 +158,27 @@ bool isDawleSignalPresent();
 
 float readDistanceCm(int trigPin, int echoPin);
 float readStableDistance(int trigPin, int echoPin);
-float calculatePercentage(
-  float distance,
-  float usableHeightCm);
-float calculateWaterHeight(
-  float distance,
-  float usableHeightCm);
+float calculatePercentage(float distance, float usableHeightCm);
+float calculateWaterHeight(float distance, float usableHeightCm);
 
 String getTankStatus(float percentage);
 
-void updatePump(
-  float upperPercentage,
-  float lowerPercentage);
+void updatePump(float upperPercentage, float lowerPercentage);
 
 void pumpOn();
 void pumpOff();
 String getPumpStatus();
 
-int sendReading(
-  float upperDistance,
-  float upperPercentage,
-  float upperWaterHeight,
-  const String& upperStatus,
-  float lowerDistance,
-  float lowerPercentage,
-  float lowerWaterHeight,
-  const String& lowerStatus);
+int sendReading(float upperDistance, float upperPercentage,
+                float upperWaterHeight, const String &upperStatus,
+                float lowerDistance, float lowerPercentage,
+                float lowerWaterHeight, const String &lowerStatus);
 
-void sendSensorError(const String& sensorName);
+void sendSensorError(const String &sensorName);
 
-void printReadings(
-  float upperDistance,
-  float upperPercentage,
-  const String& upperStatus,
-  float lowerDistance,
-  float lowerPercentage,
-  const String& lowerStatus);
+void printReadings(float upperDistance, float upperPercentage,
+                   const String &upperStatus, float lowerDistance,
+                   float lowerPercentage, const String &lowerStatus);
 
 // =====================================
 // Setup
@@ -214,12 +205,11 @@ void setup() {
   pumpRunning = false;
 
   // Water flow sensor: open-collector output, so pull the line up and count
-  // falling edges. Monitoring only — it shares nothing with the relay on GPIO 4.
+  // falling edges. Monitoring only — it shares nothing with the relay on
+  // GPIO 4.
   pinMode(FLOW_SENSOR_PIN, INPUT_PULLUP);
-  attachInterrupt(
-    digitalPinToInterrupt(FLOW_SENSOR_PIN),
-    pulseCounter,
-    FALLING);
+  attachInterrupt(digitalPinToInterrupt(FLOW_SENSOR_PIN), pulseCounter,
+                  FALLING);
   lastFlowEvalTime = millis();
   lastFlowPulseTime = 0;
 
@@ -255,8 +245,7 @@ void loop() {
     connectWiFi();
   }
 
-  if (
-    millis() - lastControlFetchTime >= CONTROL_FETCH_INTERVAL) {
+  if (millis() - lastControlFetchTime >= CONTROL_FETCH_INTERVAL) {
     lastControlFetchTime = millis();
     fetchDeviceControlState();
   }
@@ -275,19 +264,13 @@ void loop() {
   lastSendTime = millis();
 
   // Read upper tank
-  float upperDistance =
-    readStableDistance(
-      UPPER_TRIG_PIN,
-      UPPER_ECHO_PIN);
+  float upperDistance = readStableDistance(UPPER_TRIG_PIN, UPPER_ECHO_PIN);
 
   // Prevent ultrasonic cross-talk
   delay(100);
 
   // Read lower tank
-  float lowerDistance =
-    readStableDistance(
-      LOWER_TRIG_PIN,
-      LOWER_ECHO_PIN);
+  float lowerDistance = readStableDistance(LOWER_TRIG_PIN, LOWER_ECHO_PIN);
 
   // Safety: stop pump if either sensor fails
   if (upperDistance < 0) {
@@ -304,49 +287,29 @@ void loop() {
     return;
   }
 
-  float upperPercentage = calculatePercentage(
-    upperDistance,
-    upperTankUsableHeightCm);
+  float upperPercentage =
+      calculatePercentage(upperDistance, upperTankUsableHeightCm);
 
-  float lowerPercentage = calculatePercentage(
-    lowerDistance,
-    lowerTankUsableHeightCm);
+  float lowerPercentage =
+      calculatePercentage(lowerDistance, lowerTankUsableHeightCm);
 
-  float upperWaterHeight = calculateWaterHeight(
-    upperDistance,
-    upperTankUsableHeightCm);
+  float upperWaterHeight =
+      calculateWaterHeight(upperDistance, upperTankUsableHeightCm);
 
-  float lowerWaterHeight = calculateWaterHeight(
-    lowerDistance,
-    lowerTankUsableHeightCm);
+  float lowerWaterHeight =
+      calculateWaterHeight(lowerDistance, lowerTankUsableHeightCm);
 
-  String upperStatus =
-    getTankStatus(upperPercentage);
+  String upperStatus = getTankStatus(upperPercentage);
 
-  String lowerStatus =
-    getTankStatus(lowerPercentage);
+  String lowerStatus = getTankStatus(lowerPercentage);
 
-  updatePump(
-    upperPercentage,
-    lowerPercentage);
+  updatePump(upperPercentage, lowerPercentage);
 
-  printReadings(
-    upperDistance,
-    upperPercentage,
-    upperStatus,
-    lowerDistance,
-    lowerPercentage,
-    lowerStatus);
+  printReadings(upperDistance, upperPercentage, upperStatus, lowerDistance,
+                lowerPercentage, lowerStatus);
 
-  sendReading(
-    upperDistance,
-    upperPercentage,
-    upperWaterHeight,
-    upperStatus,
-    lowerDistance,
-    lowerPercentage,
-    lowerWaterHeight,
-    lowerStatus);
+  sendReading(upperDistance, upperPercentage, upperWaterHeight, upperStatus,
+              lowerDistance, lowerPercentage, lowerWaterHeight, lowerStatus);
 }
 
 // =====================================
@@ -419,20 +382,16 @@ void fetchDeviceControlState() {
   if (code == 200) {
     String payload = http.getString();
 
-    systemEnabled =
-      payload.indexOf("\"systemEnabled\":true") != -1 || payload.indexOf("\"enabled\":true") != -1;
+    systemEnabled = payload.indexOf("\"systemEnabled\":true") != -1 ||
+                    payload.indexOf("\"enabled\":true") != -1;
 
-    if (
-      payload.indexOf("\"pumpMode\":\"MANUAL\"") != -1) {
+    if (payload.indexOf("\"pumpMode\":\"MANUAL\"") != -1) {
       pumpMode = "MANUAL";
     } else {
       pumpMode = "AUTO";
     }
 
-    if (
-      payload.indexOf(
-        "\"manualPumpState\":\"ON\"")
-      != -1) {
+    if (payload.indexOf("\"manualPumpState\":\"ON\"") != -1) {
       manualPumpState = "ON";
     } else {
       manualPumpState = "OFF";
@@ -448,13 +407,15 @@ void fetchDeviceControlState() {
     if (upperIdx != -1) {
       int start = upperIdx + 20;
       int end = payload.indexOf(",", start);
-      if (end == -1) end = payload.indexOf("}", start);
+      if (end == -1)
+        end = payload.indexOf("}", start);
       if (end != -1) {
         String valStr = payload.substring(start, end);
         valStr.trim();
         if (valStr != "null") {
           float val = valStr.toFloat();
-          if (val > 0.0) upperTankUsableHeightCm = val;
+          if (val > 0.0)
+            upperTankUsableHeightCm = val;
         }
       }
     }
@@ -463,13 +424,15 @@ void fetchDeviceControlState() {
     if (lowerIdx != -1) {
       int start = lowerIdx + 20;
       int end = payload.indexOf(",", start);
-      if (end == -1) end = payload.indexOf("}", start);
+      if (end == -1)
+        end = payload.indexOf("}", start);
       if (end != -1) {
         String valStr = payload.substring(start, end);
         valStr.trim();
         if (valStr != "null") {
           float val = valStr.toFloat();
-          if (val > 0.0) lowerTankUsableHeightCm = val;
+          if (val > 0.0)
+            lowerTankUsableHeightCm = val;
         }
       }
     }
@@ -478,13 +441,15 @@ void fetchDeviceControlState() {
     if (upperCapIdx != -1) {
       int start = upperCapIdx + 22;
       int end = payload.indexOf(",", start);
-      if (end == -1) end = payload.indexOf("}", start);
+      if (end == -1)
+        end = payload.indexOf("}", start);
       if (end != -1) {
         String valStr = payload.substring(start, end);
         valStr.trim();
         if (valStr != "null") {
           float val = valStr.toFloat();
-          if (val > 0.0) upperCapacityLiters = val;
+          if (val > 0.0)
+            upperCapacityLiters = val;
         }
       }
     }
@@ -493,21 +458,22 @@ void fetchDeviceControlState() {
     if (lowerCapIdx != -1) {
       int start = lowerCapIdx + 22;
       int end = payload.indexOf(",", start);
-      if (end == -1) end = payload.indexOf("}", start);
+      if (end == -1)
+        end = payload.indexOf("}", start);
       if (end != -1) {
         String valStr = payload.substring(start, end);
         valStr.trim();
         if (valStr != "null") {
           float val = valStr.toFloat();
-          if (val > 0.0) lowerCapacityLiters = val;
+          if (val > 0.0)
+            lowerCapacityLiters = val;
         }
       }
     }
 
     Serial.println("Control updated:");
     Serial.print("System: ");
-    Serial.println(
-      systemEnabled ? "ENABLED" : "DISABLED");
+    Serial.println(systemEnabled ? "ENABLED" : "DISABLED");
 
     Serial.print("Mode: ");
     Serial.println(pumpMode);
@@ -547,15 +513,13 @@ float readDistanceCm(int trigPin, int echoPin) {
 
   digitalWrite(trigPin, LOW);
 
-  unsigned long duration =
-    pulseIn(echoPin, HIGH, 30000);
+  unsigned long duration = pulseIn(echoPin, HIGH, 30000);
 
   if (duration == 0) {
     return -1.0;
   }
 
-  float distance =
-    duration * 0.0343 / 2.0;
+  float distance = duration * 0.0343 / 2.0;
 
   if (distance < 2.0 || distance > 400.0) {
     return -1.0;
@@ -564,20 +528,16 @@ float readDistanceCm(int trigPin, int echoPin) {
   return distance;
 }
 
-float readStableDistance(
-  int trigPin,
-  int echoPin) {
+float readStableDistance(int trigPin, int echoPin) {
   const int SAMPLE_COUNT = 5;
 
   float readings[SAMPLE_COUNT];
   int validCount = 0;
 
   for (int i = 0; i < SAMPLE_COUNT; i++) {
-    float distance =
-      readDistanceCm(trigPin, echoPin);
+    float distance = readDistanceCm(trigPin, echoPin);
 
-    if (
-      distance >= 2.0 && distance <= 400.0) {
+    if (distance >= 2.0 && distance <= 400.0) {
       readings[validCount] = distance;
       validCount++;
     }
@@ -608,10 +568,9 @@ float readStableDistance(
 // Tank calculations
 // =====================================
 
-float calculatePercentage(
-  float distance,
-  float usableHeightCm) {
-  if (usableHeightCm <= 0.0) return 0.0;
+float calculatePercentage(float distance, float usableHeightCm) {
+  if (usableHeightCm <= 0.0)
+    return 0.0;
   float emptyDistance = SENSOR_MOUNTING_OFFSET_CM + usableHeightCm;
   float waterHeight = constrain(emptyDistance - distance, 0.0, usableHeightCm);
   float percentage = (waterHeight / usableHeightCm) * 100.0;
@@ -619,10 +578,9 @@ float calculatePercentage(
   return constrain(percentage, 0.0, 100.0);
 }
 
-float calculateWaterHeight(
-  float distance,
-  float usableHeightCm) {
-  if (usableHeightCm <= 0.0) return 0.0;
+float calculateWaterHeight(float distance, float usableHeightCm) {
+  if (usableHeightCm <= 0.0)
+    return 0.0;
   float emptyDistance = SENSOR_MOUNTING_OFFSET_CM + usableHeightCm;
   float waterHeight = constrain(emptyDistance - distance, 0.0, usableHeightCm);
 
@@ -653,9 +611,7 @@ String getTankStatus(float percentage) {
 // Automatic pump control
 // =====================================
 
-void updatePump(
-  float upperPercentage,
-  float lowerPercentage) {
+void updatePump(float upperPercentage, float lowerPercentage) {
   // System disabled
   if (!systemEnabled) {
     pumpOff();
@@ -665,20 +621,21 @@ void updatePump(
   // Critical dry-run protection
   // Always active, including manual mode
   if (lowerPercentage <= LOWER_STOP_LEVEL) {
-    Serial.println(
-      "Pump blocked: Lower tank is empty");
+    Serial.println("Pump blocked: Lower tank is empty");
 
     pumpOff();
     return;
   }
 
   // Authoritative Power Source Permission check
-  // Dawle permits normal pump operation; Moteur blocks pump unless explicit user permission is granted.
-  bool powerSourceAllowsPump = (powerSource == "DAWLE") || (powerSource == "MOTEUR" && allowPumpOnMoteur);
+  // Dawle permits normal pump operation; Moteur blocks pump unless explicit
+  // user permission is granted.
+  bool powerSourceAllowsPump = (powerSource == "DAWLE") ||
+                               (powerSource == "MOTEUR" && allowPumpOnMoteur);
   if (!powerSourceAllowsPump) {
     if (pumpRunning) {
       Serial.println(
-        "Pump blocked: Power source is MOTEUR without user permission");
+          "Pump blocked: Power source is MOTEUR without user permission");
       pumpOff();
     }
     return;
@@ -686,8 +643,8 @@ void updatePump(
 
   // Manual mode
   if (pumpMode == "MANUAL") {
-    if (
-      manualPumpState == "ON" && upperPercentage < UPPER_PUMP_OFF_LEVEL && lowerPercentage > LOWER_STOP_LEVEL) {
+    if (manualPumpState == "ON" && upperPercentage < UPPER_PUMP_OFF_LEVEL &&
+        lowerPercentage > LOWER_STOP_LEVEL) {
       pumpOn();
     } else {
       pumpOff();
@@ -697,16 +654,20 @@ void updatePump(
   }
   // Automatic mode — Capacity-aware transfer reasoning
   float upperCurrentLiters = (upperPercentage / 100.0f) * upperCapacityLiters;
-  float upperTargetLiters = (UPPER_PUMP_OFF_LEVEL / 100.0f) * upperCapacityLiters;
+  float upperTargetLiters =
+      (UPPER_PUMP_OFF_LEVEL / 100.0f) * upperCapacityLiters;
   float upperLitersNeeded = max(0.0f, upperTargetLiters - upperCurrentLiters);
 
   float lowerCurrentLiters = (lowerPercentage / 100.0f) * lowerCapacityLiters;
   float lowerMinimumLiters = (LOWER_STOP_LEVEL / 100.0f) * lowerCapacityLiters;
-  float lowerAvailableLiters = max(0.0f, lowerCurrentLiters - lowerMinimumLiters);
+  float lowerAvailableLiters =
+      max(0.0f, lowerCurrentLiters - lowerMinimumLiters);
 
-  float maximumSafeTransferLiters = min(upperLitersNeeded, lowerAvailableLiters);
+  float maximumSafeTransferLiters =
+      min(upperLitersNeeded, lowerAvailableLiters);
 
-  if (!pumpRunning && upperPercentage <= UPPER_PUMP_ON_LEVEL && lowerAvailableLiters > 0.0f && lowerPercentage >= LOWER_START_MIN_LEVEL) {
+  if (!pumpRunning && upperPercentage <= UPPER_PUMP_ON_LEVEL &&
+      lowerAvailableLiters > 0.0f && lowerPercentage >= LOWER_START_MIN_LEVEL) {
     Serial.print("AUTO: Refill starting. Needed: ");
     Serial.print(upperLitersNeeded);
     Serial.print(" L | Available: ");
@@ -718,13 +679,16 @@ void updatePump(
     pumpOn();
   }
 
-  if (pumpRunning && (upperPercentage >= UPPER_PUMP_OFF_LEVEL || lowerAvailableLiters <= 0.0f || lowerPercentage <= LOWER_STOP_LEVEL)) {
+  if (pumpRunning &&
+      (upperPercentage >= UPPER_PUMP_OFF_LEVEL ||
+       lowerAvailableLiters <= 0.0f || lowerPercentage <= LOWER_STOP_LEVEL)) {
     if (upperPercentage >= UPPER_PUMP_OFF_LEVEL) {
       Serial.println("AUTO: Upper tank reached target level (90%)");
     }
 
     if (lowerAvailableLiters <= 0.0f || lowerPercentage <= LOWER_STOP_LEVEL) {
-      Serial.println("AUTO: Lower tank reached minimum reserve level (10%). Transfer stopped.");
+      Serial.println("AUTO: Lower tank reached minimum reserve level (10%). "
+                     "Transfer stopped.");
     }
 
     pumpOff();
@@ -758,9 +722,7 @@ void pumpOff() {
   Serial.println("Pump turned OFF");
 }
 
-String getPumpStatus() {
-  return pumpRunning ? "ON" : "OFF";
-}
+String getPumpStatus() { return pumpRunning ? "ON" : "OFF"; }
 
 // =====================================
 // Electricity source presence detection (Dawle / Moteur)
@@ -768,7 +730,8 @@ String getPumpStatus() {
 
 // Samples the AC waveform on VOLTAGE_SENSOR_PIN over VOLTAGE_SAMPLE_WINDOW_MS.
 // Active AC voltage oscillates sinusoidally, producing Vmax - Vmin > threshold.
-// Flat DC bias or 0V (no signal / broken sensor / power outage) yields Vmax - Vmin near 0.
+// Flat DC bias or 0V (no signal / broken sensor / power outage) yields Vmax -
+// Vmin near 0.
 bool isDawleSignalPresent() {
   unsigned long start = millis();
   int minVal = 4095;
@@ -776,8 +739,10 @@ bool isDawleSignalPresent() {
 
   while (millis() - start < VOLTAGE_SAMPLE_WINDOW_MS) {
     int val = analogRead(VOLTAGE_SENSOR_PIN);
-    if (val < minVal) minVal = val;
-    if (val > maxVal) maxVal = val;
+    if (val < minVal)
+      minVal = val;
+    if (val > maxVal)
+      maxVal = val;
     delayMicroseconds(500);
   }
 
@@ -798,7 +763,8 @@ void updatePowerSourceDetection() {
   if (rawSource != candidatePowerSource) {
     candidatePowerSource = rawSource;
     candidateSourceStartTime = now;
-  } else if (candidatePowerSource != powerSource && (now - candidateSourceStartTime >= POWER_SOURCE_DEBOUNCE_MS)) {
+  } else if (candidatePowerSource != powerSource &&
+             (now - candidateSourceStartTime >= POWER_SOURCE_DEBOUNCE_MS)) {
     String oldSource = powerSource;
     powerSource = candidatePowerSource;
 
@@ -813,7 +779,8 @@ void updatePowerSourceDetection() {
     if (oldSource == "DAWLE" && powerSource == "MOTEUR") {
       allowPumpOnMoteur = false;
       if (pumpRunning) {
-        Serial.println("[POWER] DAWLE lost -> MOTEUR active. Pump stopped immediately!");
+        Serial.println(
+            "[POWER] DAWLE lost -> MOTEUR active. Pump stopped immediately!");
         pumpOff();
       }
     } else if (oldSource == "MOTEUR" && powerSource == "DAWLE") {
@@ -829,8 +796,8 @@ void updatePowerSourceDetection() {
 // Water flow presence detection
 // =====================================
 
-// Evaluates pulse arrival periodically to decide binary waterFlowDetected state.
-// Monitoring only: never calls pumpOn() / pumpOff().
+// Evaluates pulse arrival periodically to decide binary waterFlowDetected
+// state. Monitoring only: never calls pumpOn() / pumpOff().
 void updateFlowMeter() {
   unsigned long now = millis();
   if (now - lastFlowEvalTime < FLOW_EVAL_INTERVAL_MS) {
@@ -850,7 +817,8 @@ void updateFlowMeter() {
       waterFlowDetected = true;
       Serial.println("[FLOW] Water flow detected");
     }
-  } else if (waterFlowDetected && (now - lastFlowPulseTime >= FLOW_OFF_TIMEOUT_MS)) {
+  } else if (waterFlowDetected &&
+             (now - lastFlowPulseTime >= FLOW_OFF_TIMEOUT_MS)) {
     waterFlowDetected = false;
     Serial.println("[FLOW] No water flow");
   }
@@ -860,18 +828,12 @@ void updateFlowMeter() {
 // Send both tanks to backend
 // =====================================
 
-int sendReading(
-  float upperDistance,
-  float upperPercentage,
-  float upperWaterHeight,
-  const String& upperStatus,
-  float lowerDistance,
-  float lowerPercentage,
-  float lowerWaterHeight,
-  const String& lowerStatus) {
+int sendReading(float upperDistance, float upperPercentage,
+                float upperWaterHeight, const String &upperStatus,
+                float lowerDistance, float lowerPercentage,
+                float lowerWaterHeight, const String &lowerStatus) {
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println(
-      "Skipping POST: Wi-Fi not connected");
+    Serial.println("Skipping POST: Wi-Fi not connected");
     return -1;
   }
 
@@ -886,13 +848,9 @@ int sendReading(
   http.setConnectTimeout(HTTP_TIMEOUT_MS);
   http.setTimeout(HTTP_TIMEOUT_MS);
 
-  http.addHeader(
-    "Content-Type",
-    "application/json");
+  http.addHeader("Content-Type", "application/json");
 
-  http.addHeader(
-    "x-device-key",
-    DEVICE_API_KEY);
+  http.addHeader("x-device-key", DEVICE_API_KEY);
 
   String json = "{";
 
@@ -1000,8 +958,7 @@ int sendReading(
 // Sensor error
 // =====================================
 
-void sendSensorError(
-  const String& sensorName) {
+void sendSensorError(const String &sensorName) {
   if (WiFi.status() != WL_CONNECTED) {
     return;
   }
@@ -1017,13 +974,9 @@ void sendSensorError(
   http.setConnectTimeout(HTTP_TIMEOUT_MS);
   http.setTimeout(HTTP_TIMEOUT_MS);
 
-  http.addHeader(
-    "Content-Type",
-    "application/json");
+  http.addHeader("Content-Type", "application/json");
 
-  http.addHeader(
-    "x-device-key",
-    DEVICE_API_KEY);
+  http.addHeader("x-device-key", DEVICE_API_KEY);
 
   String json = "{";
 
@@ -1060,13 +1013,9 @@ void sendSensorError(
 // Serial output
 // =====================================
 
-void printReadings(
-  float upperDistance,
-  float upperPercentage,
-  const String& upperStatus,
-  float lowerDistance,
-  float lowerPercentage,
-  const String& lowerStatus) {
+void printReadings(float upperDistance, float upperPercentage,
+                   const String &upperStatus, float lowerDistance,
+                   float lowerPercentage, const String &lowerStatus) {
   Serial.println();
   Serial.println("=================================");
 
@@ -1088,8 +1037,7 @@ void printReadings(
   Serial.print(getPumpStatus());
 
   Serial.print(" | System: ");
-  Serial.print(
-    systemEnabled ? "ENABLED" : "DISABLED");
+  Serial.print(systemEnabled ? "ENABLED" : "DISABLED");
 
   Serial.print(" | Mode: ");
   Serial.print(pumpMode);

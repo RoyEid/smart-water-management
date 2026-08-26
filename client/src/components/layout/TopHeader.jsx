@@ -6,6 +6,7 @@ import { useLanguage } from "../../context/LanguageContext";
 export default function TopHeader({
   pageTitle = "Dashboard",
   deviceId = null,
+  deviceName = null,
   isOnline = false,
   onOpenMobileMenu,
 }) {
@@ -30,13 +31,19 @@ export default function TopHeader({
             <h1 className="truncate text-base font-extrabold tracking-tight text-slate-900 sm:text-xl dark:text-slate-100">
               {pageTitle}
             </h1>
-            <DeviceStatusLine deviceId={deviceId} isOnline={isOnline} className="sm:hidden" />
+            <DeviceStatusLine
+              deviceId={deviceId}
+              deviceName={deviceName}
+              isOnline={isOnline}
+              className="sm:hidden"
+            />
           </div>
         </div>
 
         <div className="flex shrink-0 items-center gap-2 sm:gap-3">
           <DeviceStatusLine
             deviceId={deviceId}
+            deviceName={deviceName}
             isOnline={isOnline}
             className="hidden sm:flex"
             emphasised
@@ -55,7 +62,13 @@ export default function TopHeader({
  * aria-live announces the online/offline transition, because a device going
  * silent is exactly the change a user must not have to notice visually.
  */
-function DeviceStatusLine({ deviceId, isOnline, className = "", emphasised = false }) {
+function DeviceStatusLine({
+  deviceId,
+  deviceName = null,
+  isOnline,
+  className = "",
+  emphasised = false,
+}) {
   const { t } = useLanguage();
 
   if (!deviceId) {
@@ -76,19 +89,23 @@ function DeviceStatusLine({ deviceId, isOnline, className = "", emphasised = fal
     );
   }
 
+  const displayLabel = deviceName && deviceName !== deviceId ? deviceName : null;
+
   return (
     <div
       className={`items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400 ${
         className.includes("hidden") ? className : `flex ${className}`
       }`}
     >
-      <span
-        className={`rounded-md bg-blue-50 px-1.5 py-0.5 font-mono font-extrabold text-blue-700 ring-1 ring-blue-100 dark:bg-blue-950/80 dark:text-cyan-400 dark:ring-blue-900/60 ${
-          emphasised ? "px-2 text-[11px]" : "text-[10px]"
-        }`}
-      >
-        {deviceId}
-      </span>
+      {displayLabel && (
+        <span
+          className={`truncate rounded-md bg-blue-50 px-1.5 py-0.5 font-bold text-blue-700 ring-1 ring-blue-100 dark:bg-blue-950/80 dark:text-cyan-400 dark:ring-blue-900/60 ${
+            emphasised ? "max-w-[160px] px-2 text-[11px]" : "max-w-[120px] text-[10px]"
+          }`}
+        >
+          {displayLabel}
+        </span>
+      )}
       <span
         className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300"
         aria-live="polite"
