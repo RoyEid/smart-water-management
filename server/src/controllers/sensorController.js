@@ -28,59 +28,37 @@ export function receiveUltrasonicReading(req, res) {
 
 export async function getLatestUltrasonicReading(req, res, next) {
   try {
-    // 1. Normal User Role Scoping
-    if (req.user?.role === "user") {
-      const accessibleDeviceIds = await getAccessibleDeviceIds(req.user);
+    const accessibleDeviceIds = await getAccessibleDeviceIds(req.user);
 
-      if (accessibleDeviceIds.length === 0) {
-        return res.status(200).json(null);
-      }
-
-      let targetDeviceId = req.query?.deviceId;
-      if (targetDeviceId) {
-        if (!accessibleDeviceIds.includes(targetDeviceId)) {
-          const error = new Error("You are not authorized to view telemetry for this device.");
-          error.statusCode = 403;
-          return next(error);
-        }
-      } else {
-        targetDeviceId = accessibleDeviceIds[0];
-      }
-
-      const memoryReading = getLatestReading(targetDeviceId);
-      if (memoryReading) {
-        return res.status(200).json(memoryReading);
-      }
-
-      const lastStored = await UltrasonicReading.findOne({ deviceId: targetDeviceId })
-        .sort({ receivedAt: -1 })
-        .lean();
-
-      if (lastStored) {
-        return res.status(200).json(serializeStoredReading(lastStored));
-      }
-
+    if (accessibleDeviceIds.length === 0) {
       return res.status(200).json(null);
     }
 
-    // 2. Admin Role Scoping
-    if (req.query?.deviceId) {
-      const targetDeviceId = req.query.deviceId;
-      const memoryReading = getLatestReading(targetDeviceId);
-      if (memoryReading) {
-        return res.status(200).json(memoryReading);
+    let targetDeviceId = req.query?.deviceId;
+    if (targetDeviceId) {
+      if (!accessibleDeviceIds.includes(targetDeviceId)) {
+        const error = new Error("You are not authorized to view telemetry for this device.");
+        error.statusCode = 403;
+        return next(error);
       }
-      const lastStored = await UltrasonicReading.findOne({ deviceId: targetDeviceId })
-        .sort({ receivedAt: -1 })
-        .lean();
-      if (lastStored) {
-        return res.status(200).json(serializeStoredReading(lastStored));
-      }
-      return res.status(200).json(null);
+    } else {
+      targetDeviceId = accessibleDeviceIds[0];
     }
 
-    const memoryReading = getLatestReading();
-    return res.status(200).json(memoryReading || null);
+    const memoryReading = getLatestReading(targetDeviceId);
+    if (memoryReading) {
+      return res.status(200).json(memoryReading);
+    }
+
+    const lastStored = await UltrasonicReading.findOne({ deviceId: targetDeviceId })
+      .sort({ receivedAt: -1 })
+      .lean();
+
+    if (lastStored) {
+      return res.status(200).json(serializeStoredReading(lastStored));
+    }
+
+    return res.status(200).json(null);
   } catch (error) {
     next(error);
   }

@@ -17,7 +17,7 @@ import {
   markAllAlertsRead,
 } from "../services/alertApi";
 import useAsyncData from "../hooks/useAsyncData";
-import { useAuth } from "../context/AuthContext";
+import { useTelemetry } from "../context/TelemetryContext";
 import { useLanguage } from "../context/LanguageContext";
 import { useToast } from "../context/ToastContext";
 import { getApiErrorMessage } from "../utils/apiError";
@@ -48,7 +48,7 @@ const SEVERITY_STYLES = {
 
 export default function AlertsPage() {
   const { t, language } = useLanguage();
-  const { isAdmin } = useAuth();
+  const { device } = useTelemetry();
   const toast = useToast();
 
   const [severity, setSeverity] = useState("");
@@ -128,7 +128,7 @@ export default function AlertsPage() {
   const handleClearResolved = async () => {
     setIsClearing(true);
     try {
-      const result = await clearResolvedAlerts();
+      const result = await clearResolvedAlerts(device?.deviceId ? { deviceId: device.deviceId } : undefined);
       toast.success(result.message || t("resolvedCleared"));
       setConfirmClear(false);
       setLocallyRead(new Set());
@@ -186,9 +186,8 @@ export default function AlertsPage() {
             {t("markAllRead")}
           </button>
 
-          {/* Clearing history is administrative, and only ever removes alerts
-              whose condition has already ended. */}
-          {isAdmin && (
+          {/* Clearing resolved alerts is restricted to the device admin. */}
+          {(device?.userRole === "admin" || device?.userRole === "owner") && (
             <button
               type="button"
               onClick={() => setConfirmClear(true)}

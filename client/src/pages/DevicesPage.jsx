@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, Cpu, Crown, Eye, Sliders } from "lucide-react";
+import { ArrowRight, Cpu, Eye, Shield, Sliders } from "lucide-react";
 import { CardSkeleton, EmptyState, ErrorState } from "../components/ui/StateViews";
 import { fetchDevices } from "../services/deviceApi";
 import useAsyncData from "../hooks/useAsyncData";
@@ -80,26 +80,24 @@ function DeviceCard({ device, t, language }) {
             {device.userRole && (
               <span
                 className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
-                  device.userRole === "owner"
+                  device.userRole === "admin" || device.userRole === "owner"
                     ? "bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300"
                     : device.userRole === "controller"
                     ? "bg-blue-100 text-blue-700 dark:bg-blue-950/70 dark:text-cyan-300"
                     : "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
                 }`}
               >
-                {device.userRole === "owner" ? (
-                  <Crown size={10} className="shrink-0" />
+                {device.userRole === "admin" || device.userRole === "owner" ? (
+                  <Shield size={10} className="shrink-0" />
                 ) : device.userRole === "controller" ? (
                   <Sliders size={10} className="shrink-0" />
                 ) : (
                   <Eye size={10} className="shrink-0" />
                 )}
-                {device.userRole === "owner"
-                  ? "Owner"
+                {device.userRole === "admin" || device.userRole === "owner"
+                  ? "Admin"
                   : device.userRole === "controller"
                   ? "Controller"
-                  : device.userRole === "admin"
-                  ? "Admin"
                   : "Viewer"}
               </span>
             )}

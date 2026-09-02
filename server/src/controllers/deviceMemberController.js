@@ -10,14 +10,12 @@ export async function listDeviceMembersHandler(req, res, next) {
   try {
     const { deviceId } = req.params;
 
-    // Must be either an admin or a member of this device
-    if (req.user?.role !== "admin") {
-      const permission = await getDevicePermission(req.user._id, deviceId);
-      if (!permission) {
-        const error = new Error("You are not authorized to view members for this device.");
-        error.statusCode = 403;
-        return next(error);
-      }
+    // Must be a member of this device
+    const permission = await getDevicePermission(req.user._id, deviceId);
+    if (!permission) {
+      const error = new Error("You are not authorized to view members for this device.");
+      error.statusCode = 403;
+      return next(error);
     }
 
     const members = await listDeviceMembers(deviceId);

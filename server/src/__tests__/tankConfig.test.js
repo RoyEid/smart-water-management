@@ -23,22 +23,24 @@ function calculateVolumeLiters(percentage, capacityLiters) {
   return (clamped / 100) * capacityLiters;
 }
 
-function evaluateUpdateAuthorization(user) {
-  if (!user || user.role === "admin") {
-    return { allowed: false, statusCode: 403, error: "Administrators are not permitted to modify device tank parameters." };
-  }
-  if (user.role === "user") {
+function evaluateUpdateAuthorization(actor) {
+  const role = typeof actor === "string" ? actor : (actor?.role || actor);
+  if (role === "admin" || role === "owner") {
     return { allowed: true, statusCode: 200 };
   }
-  return { allowed: false, statusCode: 403, error: "Unauthorized" };
+  return { allowed: false, statusCode: 403, error: "Only the device admin is authorized to configure tank parameters." };
 }
 
-test("1 & 2: regular user can create and update tank configuration", () => {
-  const regularUser = { role: "user", _id: "user-123" };
-  const auth = evaluateUpdateAuthorization(regularUser);
+test("1 & 2: device admin can create and update tank configuration", () => {
+  const auth = evaluateUpdateAuthorization("admin");
 
   assert.equal(auth.allowed, true);
   assert.equal(auth.statusCode, 200);
+
+  // Legacy owner role compatibility
+  const legacyAuth = evaluateUpdateAuthorization("owner");
+  assert.equal(legacyAuth.allowed, true);
+  assert.equal(legacyAuth.statusCode, 200);
 
   const initialPayload = {
     upper: { capacityLiters: 10000, heightMeters: 5 },
@@ -67,13 +69,15 @@ test("3: user cancel editing restores original state without calling API", () =>
   assert.equal(draftState.upperHeight, 5);
 });
 
-test("4, 5, 6, & 7: admin can read but cannot create/update config (direct API returns 403)", () => {
-  const adminUser = { role: "admin", _id: "admin-999" };
-  const auth = evaluateUpdateAuthorization(adminUser);
+test("4, 5, 6, & 7: controller and viewer cannot create/update config (direct API returns 403)", () => {
+  const controllerAuth = evaluateUpdateAuthorization("controller");
+  assert.equal(controllerAuth.allowed, false);
+  assert.equal(controllerAuth.statusCode, 403);
+  assert.equal(controllerAuth.error, "Only the device admin is authorized to configure tank parameters.");
 
-  assert.equal(auth.allowed, false);
-  assert.equal(auth.statusCode, 403);
-  assert.equal(auth.error, "Administrators are not permitted to modify device tank parameters.");
+  const viewerAuth = evaluateUpdateAuthorization("viewer");
+  assert.equal(viewerAuth.allowed, false);
+  assert.equal(viewerAuth.statusCode, 403);
 });
 
 test("8 & 9: invalid capacity or height (<= 0, NaN, negative, non-numeric) are rejected", () => {
@@ -93,9 +97,9 @@ test("10: missing configuration remains null/unconfigured rather than fake zeros
 
 test("11: configuration can be saved even while device is offline", () => {
   const device = { deviceId: "tank-01", isOnline: false, tanks: null };
-  const regularUser = { role: "user" };
+  const adminUser = { role: "admin" };
 
-  const auth = evaluateUpdateAuthorization(regularUser);
+  const auth = evaluateUpdateAuthorization(adminUser);
   assert.equal(auth.allowed, true);
 
   // Configuration is persisted to DB regardless of isOnline state
@@ -167,7 +171,7 @@ test("16 & 17: audit log records old vs new metadata on success, and no entry on
   const auditLogs = [];
 
   function performConfigUpdate(user, previousTanks, newTanksInput) {
-    if (user.role === "admin") throw new Error("403 Forbidden");
+    if (user.role !== "admin" && user.role !== "owner") throw new Error("403 Forbidden");
     if (!newTanksInput.upper?.capacityLiters || newTanksInput.upper.capacityLiters <= 0) {
       throw new Error("400 Bad Request");
     }
@@ -184,14 +188,14 @@ test("16 & 17: audit log records old vs new metadata on success, and no entry on
   }
 
   const prev = { upper: { capacityLiters: 10000, heightCm: 500 } };
-  performConfigUpdate({ role: "user" }, prev, { upper: { capacityLiters: 12000, heightMeters: 6 } });
+  performConfigUpdate({ role: "admin" }, prev, { upper: { capacityLiters: 12000, heightMeters: 6 } });
 
   assert.equal(auditLogs.length, 1);
   assert.equal(auditLogs[0].metadata.previous.upper.capacityLiters, 10000);
   assert.equal(auditLogs[0].metadata.next.upper.capacityLiters, 12000);
 
   // Failed update does not push audit entry
-  assert.throws(() => performConfigUpdate({ role: "user" }, prev, { upper: { capacityLiters: -1, heightMeters: 5 } }));
+  assert.throws(() => performConfigUpdate({ role: "admin" }, prev, { upper: { capacityLiters: -1, heightMeters: 5 } }));
   assert.equal(auditLogs.length, 1);
 });
 

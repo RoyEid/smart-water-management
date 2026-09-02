@@ -12,7 +12,6 @@ import { CardSkeleton, EmptyState, ErrorState, OfflineState } from "../component
 import useDeviceControl from "../hooks/useDeviceControl";
 import useAlerts from "../hooks/useAlerts";
 import { useTelemetry } from "../context/TelemetryContext";
-import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 import {
   formatNumber,
@@ -35,7 +34,6 @@ export default function DashboardPage() {
     lastUpdatedAt,
     retry,
   } = useTelemetry();
-  const { isAdmin } = useAuth();
   const { controlState, updating, setAllowPumpOnMoteur } = useDeviceControl();
   const { alerts, isLoading: alertsLoading } = useAlerts();
   const { t, language } = useLanguage();
@@ -73,7 +71,7 @@ export default function DashboardPage() {
           <CardSkeleton rows={4} />
           <CardSkeleton rows={4} />
         </div>
-      ) : !device && !isAdmin ? (
+      ) : !device ? (
         <EmptyState
           icon={Cpu}
           title={t("noDeviceAssignedTitle")}

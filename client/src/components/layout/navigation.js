@@ -6,7 +6,6 @@ import {
   LayoutDashboard,
   Radio,
   Settings,
-  Shield,
   Sliders,
   Waves,
   Zap,
@@ -31,24 +30,6 @@ export const ACTIVE_NAV_ITEMS = [
   { to: "/settings", labelKey: "settings", titleKey: "accountSettings", icon: Settings },
 ];
 
-// Rendered only for administrators. The sidebar hiding it is a convenience —
-// the server refuses the underlying routes regardless of what the UI shows.
-export const ADMIN_NAV_ITEM = {
-  to: "/admin",
-  labelKey: "adminDashboard",
-  titleKey: "adminDashboard",
-  icon: Shield,
-};
-
-export const ADMIN_SUB_NAV = [
-  { to: "/admin", labelKey: "adminOverview", end: true },
-  { to: "/admin/users", labelKey: "adminUsers" },
-  { to: "/admin/devices", labelKey: "adminDevices" },
-  { to: "/admin/telemetry", labelKey: "adminTelemetry" },
-  { to: "/admin/activity", labelKey: "adminActivity" },
-  { to: "/admin/config", labelKey: "adminConfig" },
-];
-
 /**
  * Modules that are deliberately not built yet.
  *
@@ -58,14 +39,9 @@ export const ADMIN_SUB_NAV = [
 export const FUTURE_NAV_ITEMS = [];
 
 /**
- * Maps a pathname to its header title key. Longest match wins so
- * /admin/users resolves to the admin title rather than falling through.
+ * Maps a pathname to its header title key. Longest match wins.
  */
-export function resolveTitleKey(pathname, { isAdmin } = {}) {
-  if (pathname.startsWith("/admin")) {
-    return isAdmin ? ADMIN_NAV_ITEM.titleKey : "dashboardOverview";
-  }
-
+export function resolveTitleKey(pathname) {
   const match = ACTIVE_NAV_ITEMS.filter((item) =>
     pathname === item.to || pathname.startsWith(`${item.to}/`)
   ).sort((a, b) => b.to.length - a.to.length)[0];

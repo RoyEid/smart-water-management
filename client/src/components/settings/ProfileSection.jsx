@@ -2,7 +2,6 @@ import { useState, useRef } from "react";
 import {
   User,
   Mail,
-  Shield,
   Calendar,
   CheckCircle2,
   AlertCircle,
@@ -219,10 +218,6 @@ export default function ProfileSection({ user, onUserUpdate }) {
 
           {/* Info row */}
           <div className="flex flex-wrap items-center gap-3 text-xs font-bold text-slate-500 dark:text-slate-400">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 dark:bg-blue-950/80 px-2.5 py-1 text-blue-700 dark:text-cyan-300 ring-1 ring-blue-100 dark:ring-blue-900/60">
-              <Shield size={12} aria-hidden="true" />
-              {user?.role === "admin" ? t("adminRole") : t("userRole")}
-            </span>
             {user?.isVerified ? (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/80 px-2.5 py-1 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-100 dark:ring-emerald-900/60">
                 <CheckCircle2 size={12} aria-hidden="true" />

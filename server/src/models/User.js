@@ -41,19 +41,12 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
-    role: {
-      type: String,
-      enum: ["user", "admin"],
-      default: "user",
-      index: true,
-    },
     isVerified: {
       type: Boolean,
       default: false,
       index: true,
     },
-    // An admin can disable an account without deleting it. A disabled account
-    // keeps its data but is refused at the authentication middleware.
+    // A disabled account keeps its data but is refused at the authentication middleware.
     isActive: {
       type: Boolean,
       default: true,

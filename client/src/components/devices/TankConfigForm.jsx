@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { AlertTriangle, Check, Container, Info, LoaderCircle, Pencil, ShieldAlert, SlidersHorizontal, X } from "lucide-react";
-import { useAuth } from "../../context/AuthContext";
+import { AlertTriangle, Check, Container, Info, LoaderCircle, Pencil, SlidersHorizontal, X } from "lucide-react";
 import { useLanguage } from "../../context/LanguageContext";
 import { useToast } from "../../context/ToastContext";
 import { useTelemetry } from "../../context/TelemetryContext";
@@ -8,7 +7,6 @@ import { updateTankConfig } from "../../services/deviceApi";
 import { getApiErrorMessage } from "../../utils/apiError";
 
 export default function TankConfigForm({ device, onUpdated }) {
-  const { isAdmin } = useAuth();
   const { t } = useLanguage();
   const toast = useToast();
 
@@ -22,8 +20,8 @@ export default function TankConfigForm({ device, onUpdated }) {
 
   const tanks = device?.tanks;
   const isConfigured = Boolean(tanks?.isConfigured);
-  const isOwner = device?.userRole ? device.userRole === "owner" : true;
-  const canEdit = !isAdmin && isOwner;
+  const isAdmin = device?.userRole ? (device.userRole === "admin" || device.userRole === "owner") : true;
+  const canEdit = isAdmin;
 
   const [isEditing, setIsEditing] = useState(() => !isConfigured && canEdit);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
@@ -182,16 +180,7 @@ export default function TankConfigForm({ device, onUpdated }) {
         </div>
       </div>
 
-      {/* Permission Notices */}
-      {isAdmin && (
-        <div className="mt-5 flex items-start gap-3 rounded-2xl bg-amber-50/80 dark:bg-amber-950/40 p-4 text-xs font-semibold text-amber-800 dark:text-amber-300 ring-1 ring-amber-200 dark:ring-amber-800/60">
-          <ShieldAlert size={18} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
-          <div>
-            <p className="font-extrabold">{t("adminReadOnlyTitle")}</p>
-            <p className="mt-0.5 text-[11px] opacity-90">{t("adminReadOnlyNotice")}</p>
-          </div>
-        </div>
-      )}
+
 
       {/* Validation Error Alert */}
       {validationError && (

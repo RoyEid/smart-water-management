@@ -25,16 +25,15 @@ smart-water-management/
 │       ├── components/           Layout, dashboard, settings and shared UI primitives
 │       ├── context/              Auth, theme, language, toast and telemetry providers
 │       ├── hooks/                useTankData, useDeviceControl, useAlerts, useAsyncData
-│       ├── pages/                One component per route, plus pages/admin/
+│       ├── pages/                One component per route
 │       ├── services/             Axios API clients and the single Socket.IO instance
 │       └── utils/                Telemetry formatting and pump-safety reasoning
 ├── server/                       Express, MongoDB/Mongoose, JWT cookie authentication
 │   └── src/
 │       ├── controllers/          Request handlers
-│       ├── middleware/           requireAuth, requireAdmin, validation, error handler
+│       ├── middleware/           requireAuth, validation, error handler
 │       ├── models/               User, UltrasonicReading, Device, Alert, AuditLog
-│       ├── routes/               auth, sensors, device control, devices, alerts, admin
-│       ├── scripts/createAdmin   First-administrator bootstrap
+│       ├── routes/               auth, sensors, device control, devices, alerts
 │       └── services/             Telemetry, alerting, device registry, audit
 ├── esp32/
 │   ├── esp32.ino                 Complete ESP32-S3 ultrasonic sender
@@ -56,7 +55,6 @@ smart-water-management/
 | `/alerts` | signed in | Alert list with severity and read filters |
 | `/devices`, `/devices/:id` | signed in | Device registry and per-device detail |
 | `/settings` | signed in | Profile, security, accounts, preferences, notifications |
-| `/admin/*` | admin only | Overview, users, devices, telemetry, activity, configuration |
 
 ## Electrical safety warning
 
@@ -264,35 +262,21 @@ The JWT remains in the existing HTTP-only cookie. Axios sends that cookie with t
 
 Values the device has not reported are shown as **Waiting for data** or **Not available**. They are never filled in with `0`, `50%`, or any other placeholder number, so anything that looks like a reading is a reading.
 
-## 11a. Create the first administrator
+## 11. Roles and permissions
 
-Registration always creates a standard `user` — the public endpoint can never mint an admin. Create the first one from the command line, once per installation:
+Smart Water Management uses a per-device membership role model (`DeviceMember`):
 
-```bash
-# Promote an account that already exists
-npm run create-admin -- you@example.com
-
-# Or create a new, pre-verified admin account
-npm run create-admin -- you@example.com "Your Name" "StrongPass1"
-```
-
-Signing in as that account adds **Admin Dashboard** to the sidebar and unlocks `/admin`. Every `/api/admin/*` endpoint checks the role server-side on each request, reading it from the database rather than the token — so demoting an admin takes effect immediately, and hiding the link is only a convenience.
-
-Admin capabilities: user management (search, filter, promote/demote, enable/disable, delete, resend verification), device registry and renaming, telemetry statistics, the audit log, and a read-only view of the runtime configuration.
-
-The last remaining administrator cannot be demoted, disabled, or deleted — through the admin panel or through Settings › Danger Zone — so an installation cannot be locked out of its own admin area.
-
-## 11b. Roles and permissions
-
-| Capability | user | admin |
-| --- | --- | --- |
-| Dashboard, live monitoring, water flow, history, alerts | yes | yes |
-| Pump control (mode, manual command, system enable) | yes | yes |
-| View devices and telemetry history, export CSV | yes | yes |
-| Mark alerts read | yes | yes |
-| Rename a device | no | yes |
-| Clear resolved alerts | no | yes |
-| `/admin` — users, devices, telemetry, activity, configuration | no | yes |
+| Capability | Admin | Controller | Viewer |
+| --- | :---: | :---: | :---: |
+| Monitor live telemetry & water levels | yes | yes | yes |
+| View alerts and device details | yes | yes | yes |
+| View telemetry history & export CSV | yes | yes | yes |
+| Operate pump controls (AUTO/MANUAL, ON/OFF, Moteur permission) | yes | yes | no |
+| Configure tank physical dimensions & capacities | yes | no | no |
+| Rename device | yes | no | no |
+| Clear resolved alerts | yes | no | no |
+| Manage household members (add, role change, remove) | yes | no | no |
+| Claim an unowned device | yes | no | no |
 
 A disabled account is refused at every entry path, including Google and GitHub sign-in, and its existing session stops working on the next request.
 
@@ -303,8 +287,6 @@ npm run verify     # backend syntax + frontend lint + all tests + production bui
 npm test           # unit tests only (41 tests, no database required)
 npm run lint       # frontend lint only
 ```
-
-`npm run test:integration --prefix server` additionally exercises the auth endpoints over HTTP; it needs the backend and MongoDB running, and it creates and removes its own `test_user@example.com` accounts.
 
 ## 12. Troubleshooting
 

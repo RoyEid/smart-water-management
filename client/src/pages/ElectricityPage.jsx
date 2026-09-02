@@ -5,7 +5,6 @@ import WaterTransferVisual from "../components/dashboard/WaterTransferVisual";
 import { EmptyState, ErrorState, OfflineState } from "../components/ui/StateViews";
 import useDeviceControl from "../hooks/useDeviceControl";
 import { useTelemetry } from "../context/TelemetryContext";
-import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 
 /**
@@ -15,7 +14,6 @@ import { useLanguage } from "../context/LanguageContext";
 export default function ElectricityPage() {
   const { reading, device, isOnline, isStale, isLoading, error, socketConnected, lastUpdatedAt, retry } =
     useTelemetry();
-  const { isAdmin } = useAuth();
   const { controlState, updating, setAllowPumpOnMoteur } = useDeviceControl();
   const { t } = useLanguage();
 
@@ -39,7 +37,7 @@ export default function ElectricityPage() {
         <OfflineState message={t("staleDataNotice")} onRetry={retry} retryLabel={t("retry")} />
       )}
 
-      {!isLoading && !device && !isAdmin ? (
+      {!isLoading && !device ? (
         <EmptyState
           icon={Cpu}
           title={t("noDeviceAssignedTitle")}

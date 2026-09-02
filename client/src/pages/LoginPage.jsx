@@ -34,7 +34,7 @@ function readOAuthErrorStatus() {
     account_link_failed:
       "Unable to link account. An account with this email already exists under a different authentication method.",
     account_disabled:
-      "This account has been disabled. Please contact an administrator.",
+      "This account has been disabled. Please contact support.",
   };
 
   return {

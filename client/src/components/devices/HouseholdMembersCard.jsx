@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  Crown,
   Eye,
   LoaderCircle,
   Plus,
@@ -18,14 +17,12 @@ import {
   removeDeviceMember,
 } from "../../services/deviceMemberApi";
 import { useToast } from "../../context/ToastContext";
-import { useLanguage } from "../../context/LanguageContext";
 import { getApiErrorMessage } from "../../utils/apiError";
 
 export default function HouseholdMembersCard({ deviceId, userRole = "viewer" }) {
-  const { t } = useLanguage();
   const toast = useToast();
 
-  const isOwner = userRole === "owner";
+  const isAdmin = userRole === "admin" || userRole === "owner";
   const [members, setMembers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -117,11 +114,12 @@ export default function HouseholdMembersCard({ deviceId, userRole = "viewer" }) 
 
   const getRoleBadge = (role) => {
     switch (role) {
+      case "admin":
       case "owner":
         return (
           <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-extrabold text-amber-800 dark:bg-amber-950/70 dark:text-amber-300">
-            <Crown size={12} className="shrink-0" />
-            Owner
+            <Shield size={12} className="shrink-0" />
+            Admin
           </span>
         );
       case "controller":
@@ -159,7 +157,7 @@ export default function HouseholdMembersCard({ deviceId, userRole = "viewer" }) 
           </div>
         </div>
 
-        {isOwner && !showAddForm && (
+        {isAdmin && !showAddForm && (
           <button
             type="button"
             onClick={() => setShowAddForm(true)}
@@ -171,8 +169,8 @@ export default function HouseholdMembersCard({ deviceId, userRole = "viewer" }) 
         )}
       </div>
 
-      {/* Add Member Form (Owner only) */}
-      {isOwner && showAddForm && (
+      {/* Add Member Form (Admin only) */}
+      {isAdmin && showAddForm && (
         <form
           onSubmit={handleAddMember}
           className="mt-5 rounded-2xl border border-blue-100 bg-blue-50/50 p-4 dark:border-blue-900/40 dark:bg-blue-950/20"
@@ -276,7 +274,7 @@ export default function HouseholdMembersCard({ deviceId, userRole = "viewer" }) 
           </div>
         ) : (
           members.map((member) => {
-            const isMemberOwner = member.role === "owner";
+            const isMemberAdmin = member.role === "admin" || member.role === "owner";
             const isBusy = busyMemberId === member.id;
             const isConfirmingDelete = deleteConfirmMemberId === member.id;
 
@@ -308,8 +306,8 @@ export default function HouseholdMembersCard({ deviceId, userRole = "viewer" }) 
                   </div>
                 </div>
 
-                {/* Owner Actions */}
-                {isOwner && !isMemberOwner && (
+                {/* Admin Actions */}
+                {isAdmin && !isMemberAdmin && (
                   <div className="flex items-center gap-2 self-end sm:self-auto">
                     {isConfirmingDelete ? (
                       <div className="flex items-center gap-1.5">
@@ -375,10 +373,10 @@ export default function HouseholdMembersCard({ deviceId, userRole = "viewer" }) 
         )}
       </div>
 
-      {!isOwner && (
+      {!isAdmin && (
         <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50/50 p-3 text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-400">
           <span className="font-extrabold text-slate-700 dark:text-slate-300">Note: </span>
-          Only the device Owner can add or change permissions for household members.
+          Only the device Admin can add or change permissions for household members.
         </div>
       )}
     </section>

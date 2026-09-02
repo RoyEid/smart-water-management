@@ -5,7 +5,6 @@ import WaterLevelChart from "../components/dashboard/WaterLevelChart";
 import { CardSkeleton, EmptyState, ErrorState, OfflineState } from "../components/ui/StateViews";
 import useDeviceControl from "../hooks/useDeviceControl";
 import { useTelemetry } from "../context/TelemetryContext";
-import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 import {
   formatNumber,
@@ -26,7 +25,6 @@ export default function LiveMonitoringPage() {
     lastUpdatedAt,
     retry,
   } = useTelemetry();
-  const { isAdmin } = useAuth();
   const { controlState } = useDeviceControl();
   const { t, language } = useLanguage();
 
@@ -61,7 +59,7 @@ export default function LiveMonitoringPage() {
           <CardSkeleton rows={1} />
           <CardSkeleton rows={1} />
         </div>
-      ) : !device && !isAdmin ? (
+      ) : !device ? (
         <EmptyState
           icon={Cpu}
           title={t("noDeviceAssignedTitle")}

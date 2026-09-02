@@ -50,31 +50,6 @@ export function ProtectedRoute() {
   return <Outlet />;
 }
 
-/**
- * Requires the admin role on top of authentication.
- *
- * This is a convenience, not the security boundary — every /api/admin route
- * checks the role server-side, so bypassing this component gains nothing but
- * an empty screen and a 403.
- */
-export function AdminRoute() {
-  const { isLoading, isAuthenticated, isAdmin } = useAuth();
-  const location = useLocation();
-
-  if (isLoading) return <SessionLoading />;
-
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
-  }
-
-  // An authenticated non-admin is redirected rather than shown a bare 403:
-  // they have a valid session and a place to be.
-  if (!isAdmin) {
-    return <Navigate to="/dashboard" replace state={{ deniedAdmin: true }} />;
-  }
-
-  return <Outlet />;
-}
 
 /**
  * Keeps a signed-in user out of the login and register screens, which would

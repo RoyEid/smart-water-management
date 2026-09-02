@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { requireAuth, requireAdmin } from "../middleware/authenticate.js";
+import { requireAuth } from "../middleware/authenticate.js";
 import validateQuery from "../middleware/validateQuery.js";
 import validateParams from "../middleware/validateParams.js";
 import { paginationSchema, objectIdParam } from "../utils/validationSchemas.js";
@@ -37,8 +37,7 @@ router.patch(
 
 router.patch("/read-all", requireAuth, markAllAlertsRead);
 
-// Deleting history is an administrative action even though it only removes
-// already-resolved rows.
-router.delete("/resolved", requireAuth, requireAdmin, clearResolvedAlerts);
+// Clearing resolved alerts is restricted to the device owner for their owned devices.
+router.delete("/resolved", requireAuth, clearResolvedAlerts);
 
 export default router;

@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 
-export const DEVICE_ROLES = ["owner", "controller", "viewer"];
+export const DEVICE_ROLES = ["admin", "controller", "viewer"];
 
 const deviceMemberSchema = new mongoose.Schema(
   {
@@ -24,7 +24,7 @@ const deviceMemberSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: DEVICE_ROLES,
+      enum: [...DEVICE_ROLES, "owner"], // "owner" retained for database compatibility during migration
       required: true,
       default: "viewer",
     },

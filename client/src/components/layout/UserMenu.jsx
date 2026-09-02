@@ -1,8 +1,9 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useContext, useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ChevronDown, LogOut, Settings, Shield, UserRound } from "lucide-react";
+import { ChevronDown, Eye, LogOut, Settings, Shield, Sliders, UserRound } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useLanguage } from "../../context/LanguageContext";
+import { TelemetryContext } from "../../context/TelemetryContext";
 
 /**
  * Derives initials for the avatar fallback.
@@ -22,14 +23,37 @@ function getInitials(name, email) {
 }
 
 export default function UserMenu() {
-  const { user, isAdmin, logout } = useAuth();
+  const { user, logout } = useAuth();
   const { t, dir } = useLanguage();
+  const telemetry = useContext(TelemetryContext);
   const [open, setOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const containerRef = useRef(null);
   const triggerRef = useRef(null);
   const menuId = useId();
   const isRtl = dir === "rtl";
+
+  const currentRole = telemetry?.device?.userRole;
+  let roleBadge = null;
+  if (currentRole === "admin" || currentRole === "owner") {
+    roleBadge = {
+      label: "Admin",
+      icon: Shield,
+      className: "bg-amber-100 text-amber-800 ring-1 ring-amber-200 dark:bg-amber-950/70 dark:text-amber-300 dark:ring-amber-800/60",
+    };
+  } else if (currentRole === "controller") {
+    roleBadge = {
+      label: "Controller",
+      icon: Sliders,
+      className: "bg-blue-100 text-blue-700 ring-1 ring-blue-200 dark:bg-blue-950/70 dark:text-cyan-300 dark:ring-blue-800/60",
+    };
+  } else if (currentRole === "viewer") {
+    roleBadge = {
+      label: "Viewer",
+      icon: Eye,
+      className: "bg-slate-200 text-slate-700 ring-1 ring-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700",
+    };
+  }
 
   useEffect(() => {
     if (!open) return undefined;
@@ -60,7 +84,6 @@ export default function UserMenu() {
   if (!user) return null;
 
   const initials = getInitials(user.name, user.email);
-  const roleLabel = isAdmin ? t("adminRole") : t("userRole");
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -114,21 +137,21 @@ export default function UserMenu() {
             <Avatar user={user} initials={initials} size="md" />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-extrabold text-slate-900 dark:text-slate-100">
-                {user.name || t("userRole")}
+                {user.name}
               </p>
               <p className="truncate text-[11px] font-medium text-slate-500 dark:text-slate-400">
                 {user.email}
               </p>
-              <span
-                className={`mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide ${
-                  isAdmin
-                    ? "bg-blue-100 text-blue-700 dark:bg-blue-950/80 dark:text-cyan-300"
-                    : "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
-                }`}
-              >
-                {isAdmin && <Shield size={10} aria-hidden="true" />}
-                {roleLabel}
-              </span>
+              {roleBadge && (
+                <div className="mt-1.5 flex items-center">
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider ${roleBadge.className}`}
+                  >
+                    <roleBadge.icon size={10} className="shrink-0" aria-hidden="true" />
+                    [ {roleBadge.label.toUpperCase()} ]
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -142,20 +165,6 @@ export default function UserMenu() {
               <Settings size={15} className="shrink-0 text-slate-400" aria-hidden="true" />
               {t("settings")}
             </Link>
-
-            {/* Rendered for admins only. The server enforces the same rule, so
-                a non-admin who navigates to /admin directly is still refused. */}
-            {isAdmin && (
-              <Link
-                to="/admin"
-                role="menuitem"
-                onClick={() => setOpen(false)}
-                className={itemClasses}
-              >
-                <Shield size={15} className="shrink-0 text-blue-500 dark:text-cyan-400" aria-hidden="true" />
-                {t("adminDashboard")}
-              </Link>
-            )}
 
             <button
               type="button"

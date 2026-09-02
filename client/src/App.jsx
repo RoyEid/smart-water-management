@@ -1,12 +1,9 @@
-import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import {
-  AdminRoute,
   ProtectedRoute,
   PublicOnlyRoute,
 } from "./components/routing/RouteGuards";
 import DashboardLayout from "./components/layout/DashboardLayout";
-import { LoadingState } from "./components/ui/StateViews";
 
 import AuthPage from "./pages/AuthPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
@@ -25,21 +22,9 @@ import DevicesPage from "./pages/DevicesPage";
 import DeviceDetailPage from "./pages/DeviceDetailPage";
 import SettingsPage from "./pages/SettingsPage";
 
-// The admin area is loaded on demand. Most sessions are ordinary users who
-// never open it, and the server refuses its endpoints for them anyway — so
-// shipping it in the initial bundle would be dead weight on every page load.
-const AdminLayout = lazy(() => import("./pages/admin/AdminLayout"));
-const AdminOverviewPage = lazy(() => import("./pages/admin/AdminOverviewPage"));
-const AdminUsersPage = lazy(() => import("./pages/admin/AdminUsersPage"));
-const AdminDevicesPage = lazy(() => import("./pages/admin/AdminDevicesPage"));
-const AdminTelemetryPage = lazy(() => import("./pages/admin/AdminTelemetryPage"));
-const AdminActivityPage = lazy(() => import("./pages/admin/AdminActivityPage"));
-const AdminConfigPage = lazy(() => import("./pages/admin/AdminConfigPage"));
-
 /**
  * Real URL routes replace the previous single-component tab switcher, so every
- * page is deep-linkable, the browser's back button works, and the admin area
- * is a route that can actually be guarded.
+ * page is deep-linkable and the browser's back button works.
  */
 function App() {
   return (
@@ -68,26 +53,6 @@ function App() {
           <Route path="/devices" element={<DevicesPage />} />
           <Route path="/devices/:deviceId" element={<DeviceDetailPage />} />
           <Route path="/settings" element={<SettingsPage />} />
-
-          {/* Admin nests inside the same chrome so the sidebar and header stay
-              put when an admin moves between operations and administration. */}
-          <Route element={<AdminRoute />}>
-            <Route
-              path="/admin"
-              element={
-                <Suspense fallback={<LoadingState />}>
-                  <AdminLayout />
-                </Suspense>
-              }
-            >
-              <Route index element={<AdminOverviewPage />} />
-              <Route path="users" element={<AdminUsersPage />} />
-              <Route path="devices" element={<AdminDevicesPage />} />
-              <Route path="telemetry" element={<AdminTelemetryPage />} />
-              <Route path="activity" element={<AdminActivityPage />} />
-              <Route path="config" element={<AdminConfigPage />} />
-            </Route>
-          </Route>
         </Route>
       </Route>
 

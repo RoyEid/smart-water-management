@@ -8,7 +8,7 @@ import {
 } from "./deviceControlService.js";
 import { emitDeviceControlChanged } from "../realtime/socketServer.js";
 
-const ONLINE_WINDOW_MS = 10_000;
+const ONLINE_WINDOW_MS = 20_000;
 
 // Kept in memory by deviceId so the dashboard and the ESP32 response path never wait on
 // (or fail because of) MongoDB. Mongo is the durable copy, this is the hot one.

@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Zap, ZapOff, CheckCircle2, ShieldAlert, LoaderCircle, AlertCircle } from "lucide-react";
-import { useAuth } from "../../context/AuthContext";
 import { useLanguage } from "../../context/LanguageContext";
 import { useToast } from "../../context/ToastContext";
 import ConfirmDialog from "../ui/ConfirmDialog";
@@ -20,7 +19,6 @@ export default function PowerSourceCard({
   updating = false,
   setAllowPumpOnMoteur,
 }) {
-  const { isAdmin } = useAuth();
   const { t } = useLanguage();
   const toast = useToast();
   const [pendingConfirm, setPendingConfirm] = useState(null);
@@ -29,7 +27,7 @@ export default function PowerSourceCard({
   const isMoteur = isOnline && powerSource === "MOTEUR";
 
   const handleTogglePermission = (targetAllow) => {
-    if (!setAllowPumpOnMoteur || isAdmin) return;
+    if (!setAllowPumpOnMoteur) return;
 
     if (targetAllow) {
       setPendingConfirm({
@@ -166,17 +164,7 @@ export default function PowerSourceCard({
             </div>
 
             <div>
-              {isAdmin ? (
-                <span
-                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-extrabold ring-1 ${
-                    allowPumpOnMoteur
-                      ? "bg-emerald-50 text-emerald-700 ring-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300"
-                      : "bg-rose-50 text-rose-700 ring-rose-300 dark:bg-rose-950/60 dark:text-rose-300"
-                  }`}
-                >
-                  {allowPumpOnMoteur ? t("moteurPermissionAllowed") : t("moteurPermissionBlocked")}
-                </span>
-              ) : allowPumpOnMoteur ? (
+              {allowPumpOnMoteur ? (
                 <button
                   type="button"
                   disabled={updating}

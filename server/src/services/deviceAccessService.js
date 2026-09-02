@@ -15,6 +15,15 @@ import {
  */
 export async function syncDeviceMembersOnBoot() {
   try {
+    // 1. Safely migrate existing legacy "owner" memberships to "admin"
+    const migrationResult = await DeviceMember.updateMany(
+      { role: "owner" },
+      { $set: { role: "admin" } }
+    );
+    if (migrationResult.modifiedCount > 0) {
+      console.log(`[Device Access] Migrated ${migrationResult.modifiedCount} legacy 'owner' membership(s) to 'admin'.`);
+    }
+
     const devices = await Device.find({ owner: { $ne: null } }).lean();
     let syncedCount = 0;
 
@@ -29,15 +38,15 @@ export async function syncDeviceMembersOnBoot() {
           device: device._id,
           deviceId: device.deviceId,
           user: device.owner,
-          role: "owner",
-          nickname: "Owner",
+          role: "admin",
+          nickname: "Admin",
         });
         syncedCount++;
       }
     }
 
     if (syncedCount > 0) {
-      console.log(`[Device Access] Synced ${syncedCount} device owner(s) into DeviceMember.`);
+      console.log(`[Device Access] Synced ${syncedCount} device admin(s) into DeviceMember.`);
     }
   } catch (error) {
     console.error("[Device Access] Failed to sync device members on boot:", error.message);
@@ -45,26 +54,23 @@ export async function syncDeviceMembersOnBoot() {
 }
 
 /**
- * Gets all device IDs accessible to a user.
- * For admin: returns all devices in registry.
- * For standard user: returns device IDs where user is owner, controller, or viewer.
+ * Gets all device IDs accessible to a user where user is owner, controller, or viewer.
  */
 export async function getAccessibleDeviceIds(user) {
   if (!user) return [];
-  if (user.role === "admin") {
-    return Device.find({}).distinct("deviceId");
-  }
   return DeviceMember.find({ user: user._id }).distinct("deviceId");
 }
 
 /**
  * Gets the specific permission/role of a user on a device.
- * Returns: "owner" | "controller" | "viewer" | null
+ * Returns: "admin" | "controller" | "viewer" | null
  */
 export async function getDevicePermission(userId, deviceId) {
   if (!userId || !deviceId) return null;
   const membership = await DeviceMember.findOne({ user: userId, deviceId }).lean();
-  return membership ? membership.role : null;
+  if (!membership) return null;
+  // Normalize legacy "owner" role to "admin"
+  return membership.role === "owner" ? "admin" : membership.role;
 }
 
 /**
@@ -72,15 +78,6 @@ export async function getDevicePermission(userId, deviceId) {
  */
 export async function getUserAccessibleDevices(user) {
   if (!user) return [];
-
-  if (user.role === "admin") {
-    const allDevices = await Device.find({}).sort({ deviceId: 1 }).lean();
-    return allDevices.map((d) => ({
-      ...d,
-      userRole: "admin",
-      nickname: "",
-    }));
-  }
 
   const memberships = await DeviceMember.find({ user: user._id })
     .populate("device")
@@ -91,7 +88,7 @@ export async function getUserAccessibleDevices(user) {
     .filter((m) => m.device)
     .map((m) => ({
       ...m.device,
-      userRole: m.role,
+      userRole: m.role === "owner" ? "admin" : m.role,
       nickname: m.nickname || "",
       memberId: String(m._id),
     }));
@@ -105,7 +102,7 @@ export function serializeMember(member) {
   return {
     id: String(member._id),
     deviceId: member.deviceId,
-    role: member.role,
+    role: member.role === "owner" ? "admin" : member.role,
     nickname: member.nickname || "",
     createdAt: member.createdAt,
     user: {
@@ -132,13 +129,13 @@ export async function listDeviceMembers(deviceId) {
 }
 
 /**
- * Adds a new member to a device (Owner only).
+ * Adds a new member to a device (Admin only).
  */
 export async function addDeviceMember(req, actorUser, deviceId, { email, role, nickname = "" }) {
-  // 1. Verify actor is the owner of this device
+  // 1. Verify actor is the admin of this device
   const actorRole = await getDevicePermission(actorUser._id, deviceId);
-  if (actorRole !== "owner") {
-    const error = new Error("Only the device owner can add household members.");
+  if (actorRole !== "admin") {
+    const error = new Error("Only the device admin can add household members.");
     error.statusCode = 403;
     throw error;
   }
@@ -161,12 +158,6 @@ export async function addDeviceMember(req, actorUser, deviceId, { email, role, n
 
   if (targetUser.isActive === false) {
     const error = new Error("Cannot add a disabled user account.");
-    error.statusCode = 400;
-    throw error;
-  }
-
-  if (targetUser.role === "admin") {
-    const error = new Error("Platform administrators cannot be added as household members.");
     error.statusCode = 400;
     throw error;
   }
@@ -236,13 +227,13 @@ export async function addDeviceMember(req, actorUser, deviceId, { email, role, n
 }
 
 /**
- * Updates a member's role or nickname (Owner only).
+ * Updates a member's role or nickname (Admin only).
  */
 export async function updateDeviceMember(req, actorUser, deviceId, memberId, { role, nickname }) {
-  // 1. Verify actor is the owner
+  // 1. Verify actor is the admin
   const actorRole = await getDevicePermission(actorUser._id, deviceId);
-  if (actorRole !== "owner") {
-    const error = new Error("Only the device owner can change member permissions.");
+  if (actorRole !== "admin") {
+    const error = new Error("Only the device admin can change member permissions.");
     error.statusCode = 403;
     throw error;
   }
@@ -255,9 +246,9 @@ export async function updateDeviceMember(req, actorUser, deviceId, memberId, { r
     throw error;
   }
 
-  // 3. Prevent changing the Owner's role
-  if (member.role === "owner") {
-    const error = new Error("The device owner's role cannot be modified.");
+  // 3. Prevent changing the Admin's role
+  if (member.role === "admin" || member.role === "owner") {
+    const error = new Error("The device admin's role cannot be modified.");
     error.statusCode = 403;
     throw error;
   }
@@ -320,13 +311,13 @@ export async function updateDeviceMember(req, actorUser, deviceId, memberId, { r
 }
 
 /**
- * Removes a member from a device (Owner only).
+ * Removes a member from a device (Admin only).
  */
 export async function removeDeviceMember(req, actorUser, deviceId, memberId) {
-  // 1. Verify actor is the owner
+  // 1. Verify actor is the admin
   const actorRole = await getDevicePermission(actorUser._id, deviceId);
-  if (actorRole !== "owner") {
-    const error = new Error("Only the device owner can remove household members.");
+  if (actorRole !== "admin") {
+    const error = new Error("Only the device admin can remove household members.");
     error.statusCode = 403;
     throw error;
   }
@@ -339,9 +330,9 @@ export async function removeDeviceMember(req, actorUser, deviceId, memberId) {
     throw error;
   }
 
-  // 3. Prevent removing the Owner
-  if (member.role === "owner") {
-    const error = new Error("The device owner cannot be removed from their own device.");
+  // 3. Prevent removing the Admin
+  if (member.role === "admin" || member.role === "owner") {
+    const error = new Error("The device admin cannot be removed from their own device.");
     error.statusCode = 403;
     throw error;
   }
@@ -387,3 +378,34 @@ export async function removeDeviceMember(req, actorUser, deviceId, memberId) {
 
   return { success: true, message: `Member ${targetEmail} removed from ${deviceId}.` };
 }
+
+/**
+ * Claims or assigns an unowned device to a user, giving them the "admin" role.
+ */
+export async function claimDeviceForUser(deviceId, userId) {
+  const device = await Device.findOne({ deviceId });
+  if (!device) {
+    const error = new Error("Device not found.");
+    error.statusCode = 404;
+    throw error;
+  }
+  device.owner = userId;
+  device.ownerAssignedAt = new Date();
+  await device.save();
+
+  let membership = await DeviceMember.findOne({ deviceId, user: userId });
+  if (!membership) {
+    membership = await DeviceMember.create({
+      device: device._id,
+      deviceId: device.deviceId,
+      user: userId,
+      role: "admin",
+      nickname: "Admin",
+    });
+  } else if (membership.role !== "admin") {
+    membership.role = "admin";
+    await membership.save();
+  }
+  return membership;
+}
+

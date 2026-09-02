@@ -38,10 +38,6 @@ function buildUserAlertScope(ownedDevices, specificDeviceId = null) {
 
 // Helper: simulated telemetry history query filter builder matching telemetryHistoryController.js
 function buildTelemetryFilter(user, ownedDevices, queryDeviceId) {
-  if (user.role === "admin") {
-    return queryDeviceId ? { deviceId: queryDeviceId } : {};
-  }
-
   if (ownedDevices.length === 0) {
     return { _id: null, empty: true };
   }
@@ -201,13 +197,7 @@ test("14. User B sees telemetry after ownerAssignedAt", () => {
   assert.equal(isIncluded, true);
 });
 
-// 15. Admin sees complete Device history
-test("15. Admin sees complete Device history without ownerAssignedAt cutoff", () => {
-  const admin = { _id: "admin-1", role: "admin" };
-  const filter = buildTelemetryFilter(admin, [], "tank-01");
-  assert.equal(filter.deviceId, "tank-01");
-  assert.equal(filter.receivedAt, undefined); // No date cutoff for admin
-});
+
 
 // 16. User analytics respect ownership start time
 test("16. User analytics respect ownership start time", () => {

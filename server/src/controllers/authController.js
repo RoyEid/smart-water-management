@@ -11,11 +11,11 @@ import { recordAudit } from "../services/auditService.js";
 import { AUDIT_ACTIONS } from "../models/AuditLog.js";
 
 // Helper to sign JWT
-export function signJWT(userId, role) {
+export function signJWT(userId) {
   const secret = process.env.JWT_SECRET;
   const expiresIn = process.env.JWT_EXPIRES_IN || "7d";
 
-  return jwt.sign({ userId, role }, secret, { expiresIn });
+  return jwt.sign({ userId }, secret, { expiresIn });
 }
 
 export async function register(req, res, next) {
@@ -161,7 +161,7 @@ export async function verifyEmail(req, res, next) {
     await user.save();
 
     // Sign JWT and set HTTP-only auth cookie (same session logic as normal login)
-    const token = signJWT(user._id, user.role);
+    const token = signJWT(user._id);
     setAuthCookie(res, token, false);
 
     await recordAudit({
@@ -235,14 +235,14 @@ export async function login(req, res, next) {
     // it never receives a session cookie in the first place.
     if (user.isActive === false) {
       const error = new Error(
-        "This account has been disabled. Please contact an administrator."
+        "This account has been disabled. Please contact support."
       );
       error.statusCode = 403;
       return next(error);
     }
 
     // Sign JWT
-    const token = signJWT(user._id, user.role);
+    const token = signJWT(user._id);
 
     // Set cookie
     setAuthCookie(res, token, rememberMe);
@@ -650,24 +650,6 @@ export async function deleteAccount(req, res, next) {
       if (!isMatch) {
         const error = new Error("Incorrect password.");
         error.statusCode = 401;
-        return next(error);
-      }
-    }
-
-    // The same last-administrator rule the admin panel enforces applies here:
-    // an admin must not be able to strand the installation by deleting their
-    // own account from Settings instead.
-    if (user.role === "admin") {
-      const otherAdmins = await User.countDocuments({
-        role: "admin",
-        _id: { $ne: user._id },
-      });
-
-      if (otherAdmins === 0) {
-        const error = new Error(
-          "You are the last administrator. Promote another user to administrator before deleting your account."
-        );
-        error.statusCode = 409;
         return next(error);
       }
     }

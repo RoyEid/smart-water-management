@@ -2,17 +2,16 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { sanitizeMetadata } from "../services/auditService.js";
 import { serializeUser } from "../utils/serializeUser.js";
-import { requireAdmin } from "../middleware/authenticate.js";
 
 /**
  * Guards on the two places secrets could leak — the audit log and the user
- * serializer — plus the admin authorization check.
+ * serializer.
  */
 
 test("audit metadata drops anything credential-shaped", () => {
   const sanitized = sanitizeMetadata({
-    from: "user",
-    to: "admin",
+    from: "viewer",
+    to: "controller",
     password: "hunter2",
     newPassword: "hunter3",
     currentPassword: "hunter1",
@@ -25,7 +24,7 @@ test("audit metadata drops anything credential-shaped", () => {
     secret: "s",
   });
 
-  assert.deepEqual(sanitized, { from: "user", to: "admin" });
+  assert.deepEqual(sanitized, { from: "viewer", to: "controller" });
 });
 
 test("audit metadata keeps only primitives and truncates long strings", () => {
@@ -49,7 +48,6 @@ test("the user serializer never emits the password or any token field", () => {
     _id: "abc",
     name: "Ada",
     email: "ada@example.com",
-    role: "admin",
     isVerified: true,
     password: "$2a$12$hashed",
     emailVerificationCodeHash: "codehash",
@@ -78,25 +76,4 @@ test("hasPassword is a boolean flag, never the hash itself", () => {
   assert.equal(JSON.stringify(withPassword).includes("$2a$12$"), false);
 });
 
-test("requireAdmin answers 401 with no user and 403 for a non-admin", () => {
-  const captured = [];
-  const next = (error) => captured.push(error);
 
-  requireAdmin({}, {}, next);
-  assert.equal(captured[0].statusCode, 401);
-
-  requireAdmin({ user: { role: "user" } }, {}, next);
-  assert.equal(captured[1].statusCode, 403);
-});
-
-test("requireAdmin passes an admin through with no error", () => {
-  let called = false;
-  let error;
-  requireAdmin({ user: { role: "admin" } }, {}, (err) => {
-    called = true;
-    error = err;
-  });
-
-  assert.equal(called, true);
-  assert.equal(error, undefined);
-});

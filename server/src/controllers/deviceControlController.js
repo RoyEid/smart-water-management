@@ -14,30 +14,9 @@ import { AUDIT_ACTIONS } from "../models/AuditLog.js";
 
 export async function getDeviceControl(req, res, next) {
   try {
-    // 1. Normal User Role Scoping
-    if (req.user?.role === "user") {
-      const accessibleDeviceIds = await getAccessibleDeviceIds(req.user);
-
-      if (accessibleDeviceIds.length === 0) {
-        return res.status(200).json({
-          success: true,
-          control: null,
-          message: "No device assigned.",
-        });
-      }
-
-      let targetDeviceId = req.query?.deviceId || req.body?.deviceId;
-      if (targetDeviceId) {
-        if (!accessibleDeviceIds.includes(targetDeviceId)) {
-          const error = new Error("You are not authorized to view controls for this device.");
-          error.statusCode = 403;
-          return next(error);
-        }
-      } else {
-        targetDeviceId = accessibleDeviceIds[0];
-      }
-
-      const control = await getDeviceControlStateAsync(targetDeviceId);
+    if (req.device?.deviceId) {
+      const deviceId = req.device.deviceId;
+      const control = await getDeviceControlStateAsync(deviceId);
       return res.status(200).json({
         success: true,
         control,
@@ -45,18 +24,29 @@ export async function getDeviceControl(req, res, next) {
       });
     }
 
-    // 2. Admin & Hardware Device-Key Path
-    let deviceId = req.device?.deviceId || req.query?.deviceId || req.body?.deviceId;
-    if (!deviceId && req.user?.role === "admin") {
-      const firstDevice = await Device.findOne().select("deviceId").lean();
-      deviceId = firstDevice?.deviceId;
-    }
-    if (!deviceId) {
-      deviceId = "tank-01";
+    const accessibleDeviceIds = await getAccessibleDeviceIds(req.user);
+
+    if (accessibleDeviceIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        control: null,
+        message: "No device assigned.",
+      });
     }
 
-    const control = await getDeviceControlStateAsync(deviceId);
-    res.status(200).json({
+    let targetDeviceId = req.query?.deviceId || req.body?.deviceId;
+    if (targetDeviceId) {
+      if (!accessibleDeviceIds.includes(targetDeviceId)) {
+        const error = new Error("You are not authorized to view controls for this device.");
+        error.statusCode = 403;
+        return next(error);
+      }
+    } else {
+      targetDeviceId = accessibleDeviceIds[0];
+    }
+
+    const control = await getDeviceControlStateAsync(targetDeviceId);
+    return res.status(200).json({
       success: true,
       control,
       ...control,
@@ -68,16 +58,9 @@ export async function getDeviceControl(req, res, next) {
 
 export async function updateDeviceControl(req, res, next) {
   try {
-    // STRICT RULE: Admins cannot operate physical controls!
-    if (req.user?.role === "admin") {
-      const error = new Error("Administrators are not permitted to operate physical device controls.");
-      error.statusCode = 403;
-      return next(error);
-    }
-
     let targetDeviceId = req.device?.deviceId || req.body?.deviceId || req.query?.deviceId;
 
-    if (req.user?.role === "user") {
+    if (req.user) {
       const accessibleDeviceIds = await getAccessibleDeviceIds(req.user);
 
       if (accessibleDeviceIds.length === 0) {

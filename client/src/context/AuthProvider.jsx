@@ -116,7 +116,6 @@ export function AuthProvider({ children }) {
       error,
       isLoading: status === "loading",
       isAuthenticated: status === "authenticated",
-      isAdmin: user?.role === "admin",
       refreshUser: loadUser,
       applyUser,
       logout,

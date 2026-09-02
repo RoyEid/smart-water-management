@@ -49,31 +49,39 @@ export async function listTelemetryHistory(req, res, next) {
     const query = req.validatedQuery ?? req.query;
     const filter = buildFilter(query);
 
-    if (req.user?.role === "user") {
-      const accessibleDevices = await getUserAccessibleDevices(req.user);
+    const accessibleDevices = await getUserAccessibleDevices(req.user);
 
-      if (accessibleDevices.length === 0) {
-        return res.status(200).json({
-          success: true,
-          readings: [],
-          pagination: {
-            page: query.page,
-            limit: query.limit,
-            total: 0,
-            totalPages: 1,
-            hasNextPage: false,
-            hasPreviousPage: false,
-          },
-        });
+    if (accessibleDevices.length === 0) {
+      return res.status(200).json({
+        success: true,
+        readings: [],
+        pagination: {
+          page: query.page,
+          limit: query.limit,
+          total: 0,
+          totalPages: 1,
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+      });
+    }
+
+    if (query.deviceId) {
+      const target = accessibleDevices.find((d) => d.deviceId === query.deviceId);
+      if (!target) {
+        const error = new Error("You are not authorized to view telemetry for this device.");
+        error.statusCode = 403;
+        return next(error);
       }
-
-      if (query.deviceId) {
-        const target = accessibleDevices.find((d) => d.deviceId === query.deviceId);
-        if (!target) {
-          const error = new Error("You are not authorized to view telemetry for this device.");
-          error.statusCode = 403;
-          return next(error);
-        }
+      filter.deviceId = target.deviceId;
+      if (target.ownerAssignedAt) {
+        filter.receivedAt = filter.receivedAt
+          ? { ...filter.receivedAt, $gte: target.ownerAssignedAt }
+          : { $gte: target.ownerAssignedAt };
+      }
+    } else {
+      if (accessibleDevices.length === 1) {
+        const target = accessibleDevices[0];
         filter.deviceId = target.deviceId;
         if (target.ownerAssignedAt) {
           filter.receivedAt = filter.receivedAt
@@ -81,20 +89,10 @@ export async function listTelemetryHistory(req, res, next) {
             : { $gte: target.ownerAssignedAt };
         }
       } else {
-        if (accessibleDevices.length === 1) {
-          const target = accessibleDevices[0];
-          filter.deviceId = target.deviceId;
-          if (target.ownerAssignedAt) {
-            filter.receivedAt = filter.receivedAt
-              ? { ...filter.receivedAt, $gte: target.ownerAssignedAt }
-              : { $gte: target.ownerAssignedAt };
-          }
-        } else {
-          filter.$or = accessibleDevices.map((d) => ({
-            deviceId: d.deviceId,
-            ...(d.ownerAssignedAt ? { receivedAt: { $gte: d.ownerAssignedAt } } : {}),
-          }));
-        }
+        filter.$or = accessibleDevices.map((d) => ({
+          deviceId: d.deviceId,
+          ...(d.ownerAssignedAt ? { receivedAt: { $gte: d.ownerAssignedAt } } : {}),
+        }));
       }
     }
 
@@ -144,28 +142,36 @@ export async function exportTelemetryHistory(req, res, next) {
     const query = req.validatedQuery ?? req.query;
     const filter = buildFilter(query);
 
-    if (req.user?.role === "user") {
-      const accessibleDevices = await getUserAccessibleDevices(req.user);
+    const accessibleDevices = await getUserAccessibleDevices(req.user);
 
-      if (accessibleDevices.length === 0) {
-        const columns = [
-          "receivedAt", "deviceId", "upperPercentage", "upperDistanceCm", "upperWaterHeightCm",
-          "upperStatus", "lowerPercentage", "lowerDistanceCm", "lowerWaterHeightCm", "lowerStatus",
-          "pumpStatus", "pumpRunning", "pumpMode", "systemEnabled", "powerSource", "allowPumpOnMoteur", "waterFlowDetected"
-        ];
-        const emptyCsv = columns.join(",") + "\r\n";
-        res.setHeader("Content-Type", "text/csv; charset=utf-8");
-        res.setHeader("Content-Disposition", 'attachment; filename="telemetry-export.csv"');
-        return res.status(200).send(emptyCsv);
+    if (accessibleDevices.length === 0) {
+      const columns = [
+        "receivedAt", "deviceId", "upperPercentage", "upperDistanceCm", "upperWaterHeightCm",
+        "upperStatus", "lowerPercentage", "lowerDistanceCm", "lowerWaterHeightCm", "lowerStatus",
+        "pumpStatus", "pumpRunning", "pumpMode", "systemEnabled", "powerSource", "allowPumpOnMoteur", "waterFlowDetected"
+      ];
+      const emptyCsv = columns.join(",") + "\r\n";
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", 'attachment; filename="telemetry-export.csv"');
+      return res.status(200).send(emptyCsv);
+    }
+
+    if (query.deviceId) {
+      const target = accessibleDevices.find((d) => d.deviceId === query.deviceId);
+      if (!target) {
+        const error = new Error("You are not authorized to export telemetry for this device.");
+        error.statusCode = 403;
+        return next(error);
       }
-
-      if (query.deviceId) {
-        const target = accessibleDevices.find((d) => d.deviceId === query.deviceId);
-        if (!target) {
-          const error = new Error("You are not authorized to export telemetry for this device.");
-          error.statusCode = 403;
-          return next(error);
-        }
+      filter.deviceId = target.deviceId;
+      if (target.ownerAssignedAt) {
+        filter.receivedAt = filter.receivedAt
+          ? { ...filter.receivedAt, $gte: target.ownerAssignedAt }
+          : { $gte: target.ownerAssignedAt };
+      }
+    } else {
+      if (accessibleDevices.length === 1) {
+        const target = accessibleDevices[0];
         filter.deviceId = target.deviceId;
         if (target.ownerAssignedAt) {
           filter.receivedAt = filter.receivedAt
@@ -173,20 +179,10 @@ export async function exportTelemetryHistory(req, res, next) {
             : { $gte: target.ownerAssignedAt };
         }
       } else {
-        if (accessibleDevices.length === 1) {
-          const target = accessibleDevices[0];
-          filter.deviceId = target.deviceId;
-          if (target.ownerAssignedAt) {
-            filter.receivedAt = filter.receivedAt
-              ? { ...filter.receivedAt, $gte: target.ownerAssignedAt }
-              : { $gte: target.ownerAssignedAt };
-          }
-        } else {
-          filter.$or = accessibleDevices.map((d) => ({
-            deviceId: d.deviceId,
-            ...(d.ownerAssignedAt ? { receivedAt: { $gte: d.ownerAssignedAt } } : {}),
-          }));
-        }
+        filter.$or = accessibleDevices.map((d) => ({
+          deviceId: d.deviceId,
+          ...(d.ownerAssignedAt ? { receivedAt: { $gte: d.ownerAssignedAt } } : {}),
+        }));
       }
     }
 

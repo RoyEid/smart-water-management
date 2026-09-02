@@ -16,7 +16,7 @@ const deviceSchema = new mongoose.Schema(
       trim: true,
       index: true,
     },
-    // Admin-editable label. Falls back to the deviceId in the UI when empty.
+    // Owner-editable label. Falls back to the deviceId in the UI when empty.
     displayName: {
       type: String,
       trim: true,
@@ -43,7 +43,7 @@ const deviceSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
-    // The device owner (regular user). Admin users cannot be owners or edit config.
+    // The device owner.
     owner: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

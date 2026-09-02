@@ -1,7 +1,7 @@
-import { useCallback, useState } from "react";
+import { useCallback, useContext, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import useAsyncData from "../hooks/useAsyncData";
-import { ArrowLeft, Check, Crown, Eye, History, LoaderCircle, Pencil, Sliders, X } from "lucide-react";
+import { ArrowLeft, Check, Eye, History, LoaderCircle, Pencil, Shield, Sliders, X } from "lucide-react";
 import {
   CardSkeleton,
   EmptyState,
@@ -10,9 +10,9 @@ import {
 import { fetchDevice, fetchTelemetryHistory, renameDevice } from "../services/deviceApi";
 import TankConfigForm from "../components/devices/TankConfigForm";
 import HouseholdMembersCard from "../components/devices/HouseholdMembersCard";
-import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 import { useToast } from "../context/ToastContext";
+import { TelemetryContext } from "../context/TelemetryContext";
 import { getApiErrorMessage } from "../utils/apiError";
 import {
   formatPercentage,
@@ -24,7 +24,6 @@ import {
 export default function DeviceDetailPage() {
   const { deviceId } = useParams();
   const { t, language } = useLanguage();
-  const { isAdmin } = useAuth();
   const toast = useToast();
 
   const [isEditingName, setIsEditingName] = useState(false);
@@ -49,6 +48,14 @@ export default function DeviceDetailPage() {
   const device = renamedDevice ?? data?.device ?? null;
   const lastStored = data?.lastStoredReading ?? null;
   const recent = data?.recent ?? [];
+
+  const telemetry = useContext(TelemetryContext);
+
+  useEffect(() => {
+    if (device && telemetry?.setDevice && telemetry.device?.deviceId !== device.deviceId) {
+      telemetry.setDevice(device);
+    }
+  }, [device, telemetry]);
 
   const handleSaveName = async () => {
     setIsSavingName(true);
@@ -142,9 +149,8 @@ export default function DeviceDetailPage() {
               <h2 className="min-w-0 truncate text-xl font-extrabold tracking-tight text-slate-900 sm:text-2xl lg:text-3xl dark:text-slate-100">
                 {device.displayName}
               </h2>
-              {/* Renaming changes shared state for every user, so it is an
-                  administrator action. */}
-              {isAdmin && (
+              {/* Renaming is available to the device admin. */}
+              {(device.userRole === "admin" || device.userRole === "owner") && (
                 <button
                   type="button"
                   onClick={startEditingName}
@@ -165,26 +171,24 @@ export default function DeviceDetailPage() {
           {device.userRole && (
             <span
               className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[11px] font-extrabold ${
-                device.userRole === "owner"
+                device.userRole === "admin" || device.userRole === "owner"
                   ? "bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300"
                   : device.userRole === "controller"
                   ? "bg-blue-100 text-blue-700 dark:bg-blue-950/70 dark:text-cyan-300"
                   : "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
               }`}
             >
-              {device.userRole === "owner" ? (
-                <Crown size={13} className="shrink-0" />
+              {device.userRole === "admin" || device.userRole === "owner" ? (
+                <Shield size={13} className="shrink-0" />
               ) : device.userRole === "controller" ? (
                 <Sliders size={13} className="shrink-0" />
               ) : (
                 <Eye size={13} className="shrink-0" />
               )}
-              {device.userRole === "owner"
-                ? "Your Access: Owner"
+              {device.userRole === "admin" || device.userRole === "owner"
+                ? "Your Access: Admin"
                 : device.userRole === "controller"
                 ? "Your Access: Controller"
-                : device.userRole === "admin"
-                ? "Platform Admin"
                 : "Your Access: Viewer"}
             </span>
           )}
@@ -210,7 +214,7 @@ export default function DeviceDetailPage() {
       {/* Household & Access Members Card */}
       <HouseholdMembersCard
         deviceId={device.deviceId}
-        userRole={device.userRole || (isAdmin ? "admin" : "viewer")}
+        userRole={device.userRole || "viewer"}
       />
 
       {/* Identity and registry facts */}

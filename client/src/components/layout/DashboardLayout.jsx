@@ -4,7 +4,6 @@ import Sidebar from "./Sidebar";
 import TopHeader from "./TopHeader";
 import { resolveTitleKey } from "./navigation";
 import useTankData from "../../hooks/useTankData";
-import { useAuth } from "../../context/AuthContext";
 import { useLanguage } from "../../context/LanguageContext";
 import { TelemetryContext } from "../../context/TelemetryContext";
 
@@ -20,7 +19,6 @@ const COLLAPSED_KEY = "smart_water_sidebar_collapsed";
  */
 export default function DashboardLayout() {
   const location = useLocation();
-  const { isAdmin } = useAuth();
   const { t, dir } = useLanguage();
   const telemetry = useTankData();
 
@@ -49,7 +47,7 @@ export default function DashboardLayout() {
     });
   };
 
-  const pageTitle = t(resolveTitleKey(location.pathname, { isAdmin }));
+  const pageTitle = t(resolveTitleKey(location.pathname));
 
   const desktopPadding = isCollapsed
     ? isRtl

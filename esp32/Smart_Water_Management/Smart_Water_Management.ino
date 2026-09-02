@@ -11,20 +11,21 @@
 // Must be the LAN IP of the machine, never localhost / 127.0.0.1.
 // Re-check with "ipconfig" whenever the laptop rejoins the hotspot,
 // because DHCP can hand out a different address.
-#define SERVER_HOST "10.41.160.157"
+#define SERVER_HOST "10.186.142.157"
 #define SERVER_PORT "5000"
 
 // Built from the parts above so the two endpoints can never drift apart
 // and no stray character can sneak into the scheme.
 #define SERVER_BASE_URL "http://" SERVER_HOST ":" SERVER_PORT
 
-const char *SERVER_URL = SERVER_BASE_URL "/api/sensors/ultrasonic";
-const char *CONTROL_URL = SERVER_BASE_URL "/api/device/control";
+const char *DEVICE_ID = "swm-1C047B9205D4";
 
 // Fail fast instead of stalling the pump loop on an unreachable backend.
-const uint16_t HTTP_TIMEOUT_MS = 5000;
+const uint16_t HTTP_TIMEOUT_MS = 2500;
 
-const char *DEVICE_ID = "tank-01";
+const char *SERVER_URL = SERVER_BASE_URL "/api/sensors/ultrasonic";
+String CONTROL_URL =
+    String(SERVER_BASE_URL) + "/api/device/control?deviceId=" + DEVICE_ID;
 
 // =====================================
 // Pins
@@ -39,7 +40,7 @@ const int LOWER_TRIG_PIN = 12;
 const int LOWER_ECHO_PIN = 13;
 
 // Pump relay
-const int RELAY_PIN = 5;
+const int RELAY_PIN = 4;
 
 // =====================================
 // Tank usable height & dead-zone configuration
@@ -218,7 +219,15 @@ void setup() {
   candidateSourceStartTime = millis();
 
   connectWiFi();
-  fetchDeviceControlState();
+  // Wait briefly for Wi-Fi association on boot before initial control fetch
+  unsigned long startWait = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - startWait < 8000) {
+    delay(100);
+    connectWiFi();
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    fetchDeviceControlState();
+  }
 
   Serial.println();
   Serial.println("=================================");
@@ -267,7 +276,7 @@ void loop() {
   float upperDistance = readStableDistance(UPPER_TRIG_PIN, UPPER_ECHO_PIN);
 
   // Prevent ultrasonic cross-talk
-  delay(100);
+  delay(30);
 
   // Read lower tank
   float lowerDistance = readStableDistance(LOWER_TRIG_PIN, LOWER_ECHO_PIN);
@@ -322,6 +331,12 @@ void connectWiFi() {
   static unsigned long lastDotAt = 0;
 
   if (WiFi.status() == WL_CONNECTED) {
+    if (connectionStarted) {
+      connectionStarted = false;
+      Serial.println();
+      Serial.print("Wi-Fi connected! IP: ");
+      Serial.println(WiFi.localIP());
+    }
     return;
   }
 
@@ -347,7 +362,7 @@ void connectWiFi() {
     Serial.println("Wi-Fi timeout. Retrying...");
 
     WiFi.disconnect(true);
-    delay(500);
+    delay(200);
 
     WiFi.mode(WIFI_STA);
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -529,7 +544,7 @@ float readDistanceCm(int trigPin, int echoPin) {
 }
 
 float readStableDistance(int trigPin, int echoPin) {
-  const int SAMPLE_COUNT = 5;
+  const int SAMPLE_COUNT = 3;
 
   float readings[SAMPLE_COUNT];
   int validCount = 0;
@@ -542,7 +557,7 @@ float readStableDistance(int trigPin, int echoPin) {
       validCount++;
     }
 
-    delay(60);
+    delay(20);
   }
 
   if (validCount == 0) {

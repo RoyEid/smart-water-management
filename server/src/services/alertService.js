@@ -6,7 +6,7 @@ import { emitAlertCreated, emitAlertResolved } from "../realtime/socketServer.js
 // firmware remains the single place where the pump decision is made.
 const LOWER_CRITICAL_LEVEL = 10.0; // LOWER_STOP_LEVEL
 const UPPER_FULL_LEVEL = 90.0; // UPPER_PUMP_OFF_LEVEL
-const DEVICE_OFFLINE_MS = 10_000;
+const DEVICE_OFFLINE_MS = 20_000;
 
 // An unchanged condition is refreshed at most this often. Without it, a
 // condition lasting an hour would issue a database write every 2 s telemetry
@@ -52,7 +52,7 @@ export function deriveConditions(reading, { isOnline }) {
       code: ALERT_CODES.DEVICE_OFFLINE,
       severity: "critical",
       message:
-        "The ESP32 has not reported telemetry for more than 10 seconds. The pump is held OFF until it reports again.",
+        "The ESP32 has not reported telemetry for more than 20 seconds. The pump is held OFF until it reports again.",
       context: { lastSeenAt: reading.receivedAt },
     });
 

@@ -5,7 +5,6 @@ import Readout from "../components/dashboard/Readout";
 import { CardSkeleton, EmptyState } from "../components/ui/StateViews";
 import useDeviceControl from "../hooks/useDeviceControl";
 import { useTelemetry } from "../context/TelemetryContext";
-import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 import { derivePumpReasoning, deriveSafetyChecks } from "../utils/pumpReasoning";
 import { formatPercentage } from "../utils/telemetryFormat";
@@ -19,7 +18,6 @@ const CHECK_ICONS = {
 export default function PumpControlPage() {
   const { reading, device, isOnline, isStale, isLoading, socketConnected, lastUpdatedAt } =
     useTelemetry();
-  const { isAdmin } = useAuth();
   const {
     controlState,
     loading: controlLoading,
@@ -50,7 +48,7 @@ export default function PumpControlPage() {
         lastUpdatedAt={lastUpdatedAt}
       />
 
-      {!isLoading && !device && !isAdmin ? (
+      {!isLoading && !device ? (
         <EmptyState
           icon={Cpu}
           title={t("noDeviceAssignedTitle")}

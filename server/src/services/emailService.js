@@ -332,7 +332,7 @@ export async function sendMemberRemovedEmail({ email, recipientName, ownerName, 
     </div>
 
     <p style="margin:0; color:#64748b; font-size:13px; line-height:1.6;">
-      If you believe this was done in error, please contact the device owner.
+      If you believe this was done in error, please contact the device admin.
     </p>
   `;
 

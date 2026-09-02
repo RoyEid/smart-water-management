@@ -51,10 +51,10 @@ function resolveIp(req) {
 }
 
 /**
- * Records an administrative or security-relevant action.
+ * Records a device management or security-relevant action.
  *
  * Never throws and never blocks the caller: an audit write failing must not
- * turn a successful role change into a 500 for the admin who made it. Failures
+ * turn a successful role change into a 500 for the user who made it. Failures
  * are logged so they are still visible.
  */
 export function recordAudit({

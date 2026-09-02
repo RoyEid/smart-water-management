@@ -20,7 +20,7 @@ export async function markAllAlertsRead() {
   return data;
 }
 
-export async function clearResolvedAlerts() {
-  const { data } = await api.delete("/alerts/resolved");
+export async function clearResolvedAlerts(params) {
+  const { data } = await api.delete("/alerts/resolved", { params });
   return data;
 }

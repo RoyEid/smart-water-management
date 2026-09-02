@@ -12,7 +12,6 @@ export function serializeUser(user, { includePasswordFlag = false } = {}) {
     id: user._id,
     name: user.name,
     email: user.email,
-    role: user.role,
     avatar: user.avatar || "",
     authProvider: user.authProvider || "local",
     isVerified: Boolean(user.isVerified),
@@ -42,12 +41,4 @@ export function serializeUser(user, { includePasswordFlag = false } = {}) {
   }
 
   return serialized;
-}
-
-/**
- * The admin user list needs the same safe fields, so it reuses the serializer
- * rather than hand-rolling a second projection that could drift.
- */
-export function serializeUserForAdmin(user) {
-  return serializeUser(user);
 }

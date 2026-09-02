@@ -13,8 +13,8 @@ const ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/jpg", "image/webp"];
 /**
  * Reads an image file and returns a downscaled, square-cropped data URL.
  *
- * SVG is deliberately not accepted: it can carry script, and it would be
- * rendered from an <img src> on other users' screens in the admin user list.
+ * SVG is deliberately not accepted: it can carry script, and it could be
+ * rendered from an <img src> on other users' screens.
  */
 export async function fileToAvatarDataUrl(file) {
   if (!file) {

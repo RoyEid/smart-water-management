@@ -67,7 +67,7 @@ const auditLogSchema = new mongoose.Schema(
   { versionKey: false }
 );
 
-// The admin activity list is always "newest first", usually filtered by action.
+// The activity log index is always "newest first", optionally filtered by action.
 auditLogSchema.index({ createdAt: -1 });
 auditLogSchema.index({ action: 1, createdAt: -1 });
 

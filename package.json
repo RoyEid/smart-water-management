@@ -11,8 +11,7 @@
     "lint": "npm run lint --prefix client",
     "test": "npm run test --prefix server && npm run test --prefix client",
     "check": "npm run check --prefix server",
-    "verify": "npm run check --prefix server && npm run lint --prefix client && npm run test && npm run build:client",
-    "create-admin": "npm run create-admin --prefix server --"
+    "verify": "npm run check --prefix server && npm run lint --prefix client && npm run test && npm run build:client"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

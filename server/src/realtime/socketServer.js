@@ -51,9 +51,9 @@ export function attachSocketServer(httpServer) {
       const decoded = jwt.verify(token, secret);
       const userId = decoded?.userId || decoded?.id;
       if (userId) {
-        const user = await User.findById(userId).select("role isActive").lean();
+        const user = await User.findById(userId).select("isActive").lean();
         if (user && user.isActive !== false) {
-          socket.user = { _id: String(user._id), role: user.role };
+          socket.user = { _id: String(user._id) };
         } else {
           socket.user = null;
         }
@@ -68,10 +68,7 @@ export function attachSocketServer(httpServer) {
   });
 
   io.on("connection", async (socket) => {
-    if (socket.user?.role === "admin") {
-      socket.join("admins");
-      console.log(`[Socket.IO] Admin connected: ${socket.id} (user=${socket.user._id})`);
-    } else if (socket.user?.role === "user") {
+    if (socket.user?._id) {
       socket.join(`user:${socket.user._id}`);
       const accessibleDevices = await DeviceMember.find({ user: socket.user._id }).distinct("deviceId");
       accessibleDevices.forEach((deviceId) => socket.join(`device:${deviceId}`));
@@ -83,14 +80,12 @@ export function attachSocketServer(httpServer) {
     }
 
     socket.on("subscribe:device", async (deviceId) => {
-      if (!deviceId) return;
-      if (socket.user?.role === "admin") {
+      if (!deviceId || !socket.user?._id) return;
+      const member = await DeviceMember.findOne({ deviceId, user: socket.user._id });
+      const isOwner = !member ? await Device.findOne({ deviceId, owner: socket.user._id }) : null;
+      if (member || isOwner) {
         socket.join(`device:${deviceId}`);
-      } else if (socket.user?.role === "user") {
-        const member = await DeviceMember.findOne({ deviceId, user: socket.user._id });
-        if (member) {
-          socket.join(`device:${deviceId}`);
-        }
+        console.log(`[Socket.IO] User socket ${socket.id} subscribed to device:${deviceId}`);
       }
     });
 
@@ -110,8 +105,8 @@ export function emitUltrasonicReading(reading) {
     return;
   }
 
-  // Room-isolated emission: only admins and authorized device subscribers receive the stream
-  io.to("admins").to(`device:${reading.deviceId}`).emit("ultrasonic:update", reading);
+  // Room-isolated emission: authorized device subscribers receive the stream
+  io.to(`device:${reading.deviceId}`).emit("ultrasonic:update", reading);
 }
 
 export function emitDeviceControlChanged(controlState) {
@@ -124,22 +119,19 @@ export function emitDeviceControlChanged(controlState) {
 
   const targetDeviceId = controlState.deviceId;
   if (targetDeviceId) {
-    io.to("admins").to(`device:${targetDeviceId}`).emit("control:update", controlState);
-    io.to("admins").to(`device:${targetDeviceId}`).emit("device-control-changed", controlState);
-  } else {
-    io.to("admins").emit("control:update", controlState);
-    io.to("admins").emit("device-control-changed", controlState);
+    io.to(`device:${targetDeviceId}`).emit("control:update", controlState);
+    io.to(`device:${targetDeviceId}`).emit("device-control-changed", controlState);
   }
 }
 
 export function emitAlertCreated(alert) {
   if (!io) return;
-  io.to("admins").to(`device:${alert.deviceId}`).emit("alert:new", serializeAlert(alert));
+  io.to(`device:${alert.deviceId}`).emit("alert:new", serializeAlert(alert));
 }
 
 export function emitAlertResolved(payload) {
   if (!io) return;
-  io.to("admins").to(`device:${payload.deviceId}`).emit("alert:resolved", payload);
+  io.to(`device:${payload.deviceId}`).emit("alert:resolved", payload);
 }
 
 /**

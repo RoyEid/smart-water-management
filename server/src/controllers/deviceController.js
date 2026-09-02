@@ -56,7 +56,7 @@ export function serializeDevice(device, latestReading, control, userRole = null)
     hasCustomName: Boolean(device.displayName),
     owner: device.owner ?? null,
     ownerAssignedAt: device.ownerAssignedAt ?? null,
-    userRole: userRole || device.userRole || (device.owner ? "user" : null),
+    userRole: (userRole === "owner" ? "admin" : userRole) || (device.userRole === "owner" ? "admin" : device.userRole) || (device.owner ? "admin" : null),
     nickname: device.nickname || "",
     tanks: serializeTankConfig(device.tanks),
     isOnline: online,
@@ -110,16 +110,13 @@ export async function getDevice(req, res, next) {
       return next(error);
     }
 
-    let userRole = "admin";
-    if (req.user?.role === "user") {
-      const permission = await getDevicePermission(req.user._id, device.deviceId);
-      if (!permission) {
-        const error = new Error("You are not authorized to view this device.");
-        error.statusCode = 403;
-        return next(error);
-      }
-      userRole = permission;
+    const permission = await getDevicePermission(req.user._id, device.deviceId);
+    if (!permission) {
+      const error = new Error("You are not authorized to view this device.");
+      error.statusCode = 403;
+      return next(error);
     }
+    const userRole = permission;
 
     const latestReading = getLatestReading(device.deviceId);
     const control = getDeviceControlState(device.deviceId);
@@ -170,6 +167,13 @@ export async function renameDevice(req, res, next) {
       return next(error);
     }
 
+    const permission = await getDevicePermission(req.user._id, device.deviceId);
+    if (permission !== "admin") {
+      const error = new Error("Only the device admin is authorized to rename the device.");
+      error.statusCode = 403;
+      return next(error);
+    }
+
     const previousName = device.displayName || device.deviceId;
     device.displayName = displayName;
     await device.save();
@@ -199,13 +203,6 @@ export async function renameDevice(req, res, next) {
 
 export async function updateTankConfig(req, res, next) {
   try {
-    // STRICT RULE: Admins cannot modify tank parameters!
-    if (req.user?.role === "admin") {
-      const error = new Error("Administrators are not permitted to modify device tank parameters.");
-      error.statusCode = 403;
-      return next(error);
-    }
-
     const device = await Device.findOne({ deviceId: req.params.deviceId });
     if (!device) {
       const error = new Error("Device not found.");
@@ -213,10 +210,10 @@ export async function updateTankConfig(req, res, next) {
       return next(error);
     }
 
-    // STRICT RULE: Only the device Owner can modify tank configuration (Controllers & Viewers cannot)
+    // STRICT RULE: Only the device Admin can modify tank configuration (Controllers & Viewers cannot)
     const permission = await getDevicePermission(req.user._id, device.deviceId);
-    if (permission !== "owner") {
-      const error = new Error("Only the device owner is authorized to configure tank parameters.");
+    if (permission !== "admin") {
+      const error = new Error("Only the device admin is authorized to configure tank parameters.");
       error.statusCode = 403;
       return next(error);
     }

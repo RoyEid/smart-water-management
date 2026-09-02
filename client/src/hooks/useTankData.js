@@ -8,7 +8,7 @@ import { fetchDevice, fetchDevices } from "../services/deviceApi";
 import { useAuth } from "../context/AuthContext";
 import { getApiErrorMessage, isUnauthorized } from "../utils/apiError";
 
-const ONLINE_WINDOW_MS = 10_000;
+const ONLINE_WINDOW_MS = 20_000;
 
 // Bounded so a dashboard left open overnight cannot grow without limit. At one
 // reading every 2 s this is the last two minutes, which is what the recent
@@ -114,7 +114,7 @@ function normalizeReading(value) {
  * Scoped strictly to the currently authenticated user's assigned device(s).
  */
 export default function useTankData() {
-  const { user, isAdmin, isAuthenticated } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const [reading, setReading] = useState(null);
   const [readings, setReadings] = useState([]);
   const [device, setDevice] = useState(null);
@@ -167,11 +167,8 @@ export default function useTankData() {
     const applyReading = (next) => {
       if (!isReading(next)) return false;
 
-      // Normal users must never receive or apply readings from another user's device
-      if (!isAdmin && currentDeviceRef.current && next.deviceId !== currentDeviceRef.current.deviceId) {
-        return false;
-      }
-      if (!isAdmin && !currentDeviceRef.current) {
+      // Never apply readings from a different device if a device is active
+      if (currentDeviceRef.current && next.deviceId !== currentDeviceRef.current.deviceId) {
         return false;
       }
 
@@ -219,6 +216,7 @@ export default function useTankData() {
         const activeDevice = deviceList[0];
         setDevice(activeDevice);
         currentDeviceRef.current = activeDevice;
+        sensorSocket.emit("subscribe:device", activeDevice.deviceId);
 
         const latest = await fetchLatestUltrasonicReading(activeDevice.deviceId);
 
@@ -254,6 +252,9 @@ export default function useTankData() {
       if (!mounted) return;
       setSocketConnected(true);
       setError("");
+      if (currentDeviceRef.current?.deviceId) {
+        sensorSocket.emit("subscribe:device", currentDeviceRef.current.deviceId);
+      }
       loadLatest();
     };
 
@@ -285,7 +286,7 @@ export default function useTankData() {
       sensorSocket.off("connect_error", onConnectError);
       releaseSensorSocket();
     };
-  }, [reloadToken, user?._id, isAuthenticated, isAdmin]);
+  }, [reloadToken, user?._id, isAuthenticated]);
 
   // Online purely as a function of how old the newest reading is. Nothing here
   // depends on component lifetime, so a remount cannot flip a live device

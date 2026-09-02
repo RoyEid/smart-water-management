@@ -243,7 +243,7 @@ function completeOAuthLogin(provider) {
         return res.redirect(`${frontendUrl}/login?oauthError=account_disabled`);
       }
 
-      const token = signJWT(user._id, user.role);
+      const token = signJWT(user._id);
       setAuthCookie(res, token, true);
 
       try {

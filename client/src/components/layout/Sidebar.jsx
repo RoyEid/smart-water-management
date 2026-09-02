@@ -4,11 +4,9 @@ import { ChevronLeft, ChevronRight, Droplets, X } from "lucide-react";
 import ComingSoonBadge from "./ComingSoonBadge";
 import {
   ACTIVE_NAV_ITEMS,
-  ADMIN_NAV_ITEM,
   FUTURE_NAV_ITEMS,
 } from "./navigation";
 import { useLanguage } from "../../context/LanguageContext";
-import { useAuth } from "../../context/AuthContext";
 
 export default function Sidebar({
   isCollapsed = false,
@@ -17,7 +15,6 @@ export default function Sidebar({
   onCloseMobile,
 }) {
   const { t, dir } = useLanguage();
-  const { isAdmin } = useAuth();
   const isRtl = dir === "rtl";
   const closeButtonRef = useRef(null);
 
@@ -54,7 +51,7 @@ export default function Sidebar({
     ? ChevronRight
     : ChevronLeft;
 
-  const navItems = isAdmin ? [...ACTIVE_NAV_ITEMS, ADMIN_NAV_ITEM] : ACTIVE_NAV_ITEMS;
+  const navItems = ACTIVE_NAV_ITEMS;
 
   const linkClasses = ({ isActive }) =>
     `group relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-extrabold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${

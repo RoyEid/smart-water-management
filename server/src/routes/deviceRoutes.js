@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { requireAuth, requireAdmin } from "../middleware/authenticate.js";
+import { requireAuth } from "../middleware/authenticate.js";
 import validateRequest from "../middleware/validateRequest.js";
 import validateParams from "../middleware/validateParams.js";
 import validateQuery from "../middleware/validateQuery.js";
@@ -84,8 +84,8 @@ export const analyticsQuerySchema = z.object({
   to: isoDate.optional(),
 });
 
-// Reading device state, history, and analytics is available to any signed-in user; only
-// renaming, which changes shared state, requires an administrator.
+// Reading device state, history, and analytics is available to signed-in users with device access;
+// renaming requires the device owner.
 router.get("/", requireAuth, listDevices);
 
 router.get(
@@ -127,7 +127,6 @@ router.get(
 router.patch(
   "/:deviceId",
   requireAuth,
-  requireAdmin,
   validateParams(deviceIdParamSchema),
   validateRequest(renameSchema),
   renameDevice
