@@ -1,407 +1,421 @@
-# Smart Water Ultrasonic Monitor
+# Smart Water Management System
 
-This project receives HC-SR04 distance readings for an upper and a lower tank from an ESP32-S3 and displays them on an authenticated React dashboard. The ESP32 sends one reading every 2 s. The backend immediately broadcasts each reading with Socket.IO, so the page changes without refreshing. The device is marked Offline when no reading arrives for ten seconds.
+An enterprise-grade, IoT-enabled water monitoring and pump automation platform. The system pairs custom ESP32-S3 dual-tank hardware with a modern React 19 dashboard and an Express/MongoDB backend, delivering real-time telemetry, automated pump safety reasoning, multi-device management, and granular role-based access control.
 
-Each reading is written to MongoDB and also cached in memory. On restart the backend restores the newest stored reading, so the dashboard shows real history instead of "Awaiting Data" — a restored reading older than ten seconds still correctly reports the device as Offline.
+---
 
-## Live data flow
-
-```text
-HC-SR04 ×2 → ESP32-S3 → POST /api/sensors/ultrasonic  (header: x-device-key)
-           → normalized telemetry object
-           → MongoDB (UltrasonicReading) + in-memory latest reading
-           → Socket.IO "ultrasonic:update" event
-           → React dashboard updates both tanks, pump state, and timestamp
-```
-
-The dashboard first requests `GET /api/sensors/ultrasonic/latest` with the existing JWT cookie. A single module-level socket.io-client connection listens for the exact `ultrasonic:update` event, reconnects automatically, and is cleaned up when the dashboard unmounts.
-
-## Project structure
+## Architecture & Live Data Flow
 
 ```text
-smart-water-management/
-├── client/                       React, Vite, Tailwind CSS dashboard and auth UI
-│   └── src/
-│       ├── components/           Layout, dashboard, settings and shared UI primitives
-│       ├── context/              Auth, theme, language, toast and telemetry providers
-│       ├── hooks/                useTankData, useDeviceControl, useAlerts, useAsyncData
-│       ├── pages/                One component per route
-│       ├── services/             Axios API clients and the single Socket.IO instance
-│       └── utils/                Telemetry formatting and pump-safety reasoning
-├── server/                       Express, MongoDB/Mongoose, JWT cookie authentication
-│   └── src/
-│       ├── controllers/          Request handlers
-│       ├── middleware/           requireAuth, validation, error handler
-│       ├── models/               User, UltrasonicReading, Device, Alert, AuditLog
-│       ├── routes/               auth, sensors, device control, devices, alerts
-│       └── services/             Telemetry, alerting, device registry, audit
-├── esp32/
-│   ├── esp32.ino                 Complete ESP32-S3 ultrasonic sender
-│   ├── secrets.example.h         Safe credential template
-│   └── secrets.h                 Local ignored credentials (never commit)
-├── package.json                  Root install, development and verification scripts
-└── README.md
+  ┌────────────────────────────────────────────────────────┐
+  │                    Hardware Layer                      │
+  │  ESP32-S3 Microcontroller                              │
+  │  ├── HC-SR04 Ultrasonic (Upper Tank)  [GPIO 7 / 15]    │
+  │  ├── HC-SR04 Ultrasonic (Lower Tank)  [GPIO 12 / 13]   │
+  │  ├── YF-S201 Flow Sensor              [GPIO 14]        │
+  │  ├── AC / Generator Sense Line (Dawle vs Moteur)       │
+  │  └── Pump Control Relay               [GPIO 4]         │
+  └───────────────────────────┬────────────────────────────┘
+                              │ HTTP POST /api/sensors/ultrasonic (Header: x-device-key)
+                              │ HTTP GET  /api/device/control (Polls pump commands)
+                              ▼
+  ┌────────────────────────────────────────────────────────┐
+  │                     Backend API                        │
+  │  Node.js / Express / MongoDB / Socket.IO               │
+  │  ├── Ingestion & Moving Median Telemetry Filter        │
+  │  ├── Automatic Pump Reasoning Engine & Interlocks      │
+  │  ├── Auth (JWT Cookies, Google/GitHub OAuth, Email OTP)│
+  │  ├── Per-Device Scoped RBAC (Admin, Controller, Viewer)│
+  │  └── Real-time Socket.IO Broadcast ("ultrasonic:update")│
+  └───────────────────────────┬────────────────────────────┘
+                              │
+                              │ WebSocket Stream & REST API
+                              ▼
+  ┌────────────────────────────────────────────────────────┐
+  │                 Web Application Layer                  │
+  │  React 19 + Vite + Tailwind CSS                        │
+  │  ├── Live Tank Visualizations & Volume Math            │
+  │  ├── Pump Manual / Auto Controls & Reasoning Cards     │
+  │  ├── Telemetry History, Filtering, & CSV Export        │
+  │  ├── Household Member Management & Invitations         │
+  │  └── Multi-Language (EN, AR, FR, ZH) & Dark/Light Mode │
+  └────────────────────────────────────────────────────────┘
 ```
 
-### Application routes
+---
 
-| Route | Access | Purpose |
-| --- | --- | --- |
-| `/dashboard` | signed in | Both tanks, volumes, pump reasoning, active alerts |
-| `/pump-control` | signed in | Mode, manual command, safety interlocks |
-| `/live-monitoring` | signed in | Raw telemetry and stream diagnostics |
-| `/water-flow` | signed in | Flow rate and session transfer |
-| `/history` | signed in | Filtered, paginated telemetry with CSV export |
-| `/alerts` | signed in | Alert list with severity and read filters |
-| `/devices`, `/devices/:id` | signed in | Device registry and per-device detail |
-| `/settings` | signed in | Profile, security, accounts, preferences, notifications |
+## Key Features
 
-## Electrical safety warning
+### Dual-Tank Monitoring & Flow Tracking
+* **Real-time Tank Telemetry:** Ultrasonic measurements calculate water height (cm), capacity percentage (%), and volume (L) for both upper and lower tanks.
+* **Flow Detection:** Integrated YF-S201 flow sensor validates water movement when the pump is energized.
+* **Dual Power Sensing:** Dynamically senses mains electricity (**DAWLE**) versus generator (**MOTEUR**), adapting pumping logic according to user policy.
 
-> **Do not connect a standard HC-SR04 ECHO pin directly to ESP32 GPIO 6.** The HC-SR04 ECHO signal can be approximately 5 V, while ESP32-S3 GPIO is designed for 3.3 V logic. Use a suitable logic-level shifter or a correctly designed resistor voltage divider to reduce the ECHO signal to a safe level. Connect all grounds together. If you are unsure about the wiring, ask someone experienced with electronics before powering the circuit.
+### Intelligent Pump Automation & Safety Interlocks
+* **Dynamic Operating Modes:** Toggle between **AUTO** (level-driven automated pumping) and **MANUAL** (user-driven override).
+* **Hardware & Software Interlocks:**
+  * **Dry-Run Protection:** Prevents the pump from running if the lower source tank is depleted (`LOWER_TANK_CRITICAL`).
+  * **Overflow Prevention:** Automatically terminates pumping when the upper destination tank reaches capacity (`UPPER_TANK_FULL`).
+  * **Blocked Flow Detection:** Triggers safety shutdown if the pump is active but no flow is measured within the threshold period (`PUMP_BLOCKED`).
+  * **Generator Policy (`allowPumpOnMoteur`):** Restricts high-current pump operation during generator power unless explicitly authorized by the device admin.
 
-The sketch uses these pins:
+### Multi-Device Management & Household Sharing
+* **Zero-Touch Provisioning:** Devices register lazily upon first valid telemetry transmission.
+* **Secure Device Claiming:** Claim hardware ownership using single-use 6-digit physical claim codes.
+* **Per-Device Role-Based Access Control (RBAC):**
+  * **Admin:** Full device control, physical tank dimension configuration, device renaming, alert resolution, and household member administration.
+  * **Controller:** Real-time monitoring and manual pump operation.
+  * **Viewer:** Read-only access to live dashboards, analytics, and alert logs.
 
-- HC-SR04 TRIG to ESP32-S3 GPIO 5
-- HC-SR04 ECHO through level shifting to ESP32-S3 GPIO 6
-- HC-SR04 VCC and GND according to the sensor and board specifications
+### Enterprise Security & Authentication
+* **Authentication Suite:** Local email/password authentication, 6-digit email OTP verification, password recovery flows, and OAuth 2.0 (Google & GitHub).
+* **Hardened Security:** Password hashing with bcrypt (12 rounds), HTTP-only SameSite session cookies, strict CORS verification, state-changing CSRF origin guards, rate limiting, and Helmet security headers.
+* **Full Audit Trail:** Structured logging for security actions, credential alterations, hardware claiming, and pump state changes.
 
-No relay or pump is controlled by this project.
+### User Experience & Internationalization
+* **Real-Time Responsiveness:** Instant UI state updates via Socket.IO without page reloads.
+* **Internationalization:** Complete localized interfaces with RTL support for English, Arabic (العربية), French (Français), and Chinese (中文).
+* **Adaptive Theming:** Seamless switching between Light, Dark, and System modes.
 
-## 1. Install the software
+---
 
-Install these prerequisites first:
+## Repository Structure
 
-- Node.js 20.19 or newer (or Node.js 22.12 or newer)
-- npm, which is included with Node.js
-- MongoDB running locally, or access to a MongoDB connection string
-- Arduino IDE with the Espressif ESP32 board package
+```text
+smart-water-management-main/
+├── client/                             # React 19 Frontend (Vite + Tailwind CSS)
+│   └── src/
+│       ├── components/
+│       │   ├── analytics/              # KPI cards, volume bar charts, water trend graphs
+│       │   ├── dashboard/              # Tank visuals, pump readout, auto-reasoning cards
+│       │   ├── devices/                # Household members card, tank config form
+│       │   ├── layout/                 # Sidebar, header, navigation, notification bell
+│       │   └── settings/               # Profile, security, connected accounts, preferences
+│       ├── context/                    # Auth, Theme, Language, Toast, Telemetry providers
+│       ├── hooks/                      # useTankData, useDeviceControl, useAlerts, useAsyncData
+│       ├── pages/                      # Dashboard, PumpControl, History, Alerts, Devices, Settings
+│       ├── services/                   # Axios API client, Socket.IO client
+│       └── utils/                      # Pump reasoning, transfer math, telemetry formatting
+├── server/                             # Node.js + Express Backend API
+│   └── src/
+│       ├── config/                     # Database (Mongoose), Email (SMTP/Brevo), Passport OAuth
+│       ├── controllers/                # Auth, Sensors, DeviceControl, Devices, Alerts, Analytics
+│       ├── middleware/                 # requireAuth, validateRequest, rateLimiters, errorHandler
+│       ├── models/                     # User, Device, DeviceMember, DeviceControlState, Alert, etc.
+│       ├── realtime/                   # Socket.IO server initialization and room broadcasts
+│       ├── routes/                     # /api/auth, /api/sensors, /api/device/control, /api/devices
+│       ├── services/                   # Device access, email dispatch, audit, control service
+│       └── utils/                      # Token generation, password hashing, cookies
+├── esp32/                              # Microcontroller Firmware
+│   └── Smart_Water_Management/
+│       ├── Smart_Water_Management.ino  # Production ESP32-S3 firmware
+│       ├── secrets.example.h           # Wi-Fi & Device API Key template
+│       └── secrets.h                   # Ignored local credentials
+├── package.json                        # Root orchestration scripts
+└── README.md                           # Documentation
+```
 
-Open PowerShell in the project folder and install all root, frontend, and backend dependencies:
+---
 
-```powershell
-cd C:\Users\Admin\Desktop\smart-water-management
+## Frontend Application Routes
+
+| Route | Access | Description |
+| :--- | :--- | :--- |
+| `/dashboard` | Authenticated | Real-time dual-tank levels, volumes, active pump state, and automated reasoning. |
+| `/pump-control` | Authenticated | Mode switching (AUTO/MANUAL), manual pump toggle, and power policy controls. |
+| `/live-monitoring` | Authenticated | Raw telemetry inspector and hardware stream diagnostics. |
+| `/water-flow` | Authenticated | Flow rate measurements, session transfer counters, and status indicators. |
+| `/history` | Authenticated | Paginated, searchable historical readings with CSV export capabilities. |
+| `/alerts` | Authenticated | System alerts filtered by severity (Info, Warning, Critical) and resolution state. |
+| `/devices` | Authenticated | List of accessible devices and ownership claim modal. |
+| `/devices/:id` | Authenticated | Device management, tank capacity/height settings, and household member roster. |
+| `/settings` | Authenticated | User profile, security, connected OAuth accounts, theme, and notifications. |
+| `/login`, `/register` | Public / Guest | Account access, registration, OTP verification, and password recovery. |
+
+---
+
+## Role-Based Access Control (RBAC)
+
+Access permissions are scoped to each specific device via `DeviceMember`:
+
+| Feature / Action | Admin | Controller | Viewer |
+| :--- | :---: | :---: | :---: |
+| Monitor live water levels & telemetry | Yes | Yes | Yes |
+| View alert history & system diagnostics | Yes | Yes | Yes |
+| Inspect historical readings & export CSV | Yes | Yes | Yes |
+| Operate pump (AUTO/MANUAL, ON/OFF) | Yes | Yes | No |
+| Toggle generator pump permission (`allowPumpOnMoteur`) | Yes | Yes | No |
+| Configure tank heights and liter capacities | Yes | No | No |
+| Rename device label | Yes | No | No |
+| Acknowledge / resolve system alerts | Yes | No | No |
+| Manage household members (invite, change role, revoke) | Yes | No | No |
+| Claim an unowned device via physical code | Yes | No | No |
+
+---
+
+## Hardware Specifications & Circuit Configuration
+
+> [!WARNING]
+> **Logic Level Compatibility Notice:**
+> The ESP32-S3 operates on **3.3V logic**. The HC-SR04 ultrasonic sensor operates on **5V VCC** and returns a 5V logic signal on its `ECHO` pin. Connecting a 5V `ECHO` signal directly to an ESP32 GPIO pin can cause hardware damage. Use a bidirectional logic level shifter or an appropriate resistor voltage divider (e.g., 1kΩ / 2kΩ) to safely step down the ECHO signal to 3.3V. Connect all ground pins (GND) to a common rail.
+
+### Pinout Configuration (ESP32-S3)
+
+| Component | Signal | ESP32-S3 GPIO | Notes |
+| :--- | :--- | :--- | :--- |
+| **Upper Tank HC-SR04** | TRIG | **GPIO 7** | Output pulse trigger |
+| **Upper Tank HC-SR04** | ECHO | **GPIO 15** | Input pulse through 3.3V level shifter |
+| **Lower Tank HC-SR04** | TRIG | **GPIO 12** | Output pulse trigger |
+| **Lower Tank HC-SR04** | ECHO | **GPIO 13** | Input pulse through 3.3V level shifter |
+| **Water Flow Sensor (YF-S201)** | SIGNAL | **GPIO 14** | Pulse interrupt counter |
+| **Pump Relay Module** | IN | **GPIO 4** | Active HIGH / LOW relay driver |
+| **AC Dawle Sense (Mains)** | SENSE | **GPIO 16** | Optocoupled voltage detection |
+
+---
+
+## Installation & Setup
+
+### Prerequisites
+* **Node.js**: v20.19.0+ or v22.12.0+
+* **npm**: v10+ (bundled with Node.js)
+* **MongoDB**: v6.0+ running locally or a MongoDB Atlas connection string
+* **Arduino IDE**: v2.0+ with the **Espressif ESP32** board package installed
+
+---
+
+### Step 1: Install Dependencies
+
+From the repository root, install all dependencies across the workspace:
+
+```bash
 npm run install:all
 ```
 
-## 2. Configure environment variables
+---
 
-Create local environment files from the safe examples:
+### Step 2: Environment Configuration
 
-```powershell
-Copy-Item server\.env.example server\.env
-Copy-Item client\.env.example client\.env
-Copy-Item esp32\secrets.example.h esp32\secrets.h
+Create the local environment configuration files from their templates:
+
+#### Backend (`server/.env`)
+
+```bash
+cp server/.env.example server/.env
 ```
 
-Edit `server/.env` and set at least:
+Edit `server/.env` with your settings:
 
 ```dotenv
 PORT=5000
-DEVICE_API_KEY=replace-with-a-long-random-secret
+NODE_ENV=development
 FRONTEND_URL=http://localhost:5173
+CLIENT_URL=http://localhost:5173
 MONGO_URI=mongodb://127.0.0.1:27017/smart-water-management
-JWT_SECRET=replace_with_a_random_secret_at_least_32_characters_long_for_security_reasons
+DEVICE_API_KEY=your-secure-device-secret-key
+JWT_SECRET=your_random_secret_string_minimum_32_characters_long
+JWT_EXPIRES_IN=7d
+
+# Email Dispatch Mode (console | brevo | smtp)
+EMAIL_MODE=console
+EMAIL_FROM="Smart Water Management" <no-reply@example.com>
+
+# Optional: Google & GitHub OAuth credentials
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_CALLBACK_URL=http://localhost:5000/api/auth/google/callback
+
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+GITHUB_CALLBACK_URL=http://localhost:5000/api/auth/github/callback
 ```
 
-Generate a unique, long value for `DEVICE_API_KEY`; the identical value must be entered in the ESP32 sketch. Use a different long random value for `JWT_SECRET`. Never put either secret in frontend code or commit `server/.env`.
+#### Frontend (`client/.env`)
 
-The frontend example contains:
+```bash
+cp client/.env.example client/.env
+```
 
 ```dotenv
 VITE_API_URL=http://localhost:5000
 VITE_SOCKET_URL=http://localhost:5000
 ```
 
-`VITE_SOCKET_URL` names the backend origin used by Socket.IO. It contains no device secret.
+#### Microcontroller Firmware (`esp32/Smart_Water_Management/secrets.h`)
 
-Both actual `.env` files and `esp32/secrets.h` are ignored by the repository's `.gitignore`. The checked-in example files contain placeholders only. Generated Arduino output under `esp32/build/` is also ignored because compiled binaries can contain credential strings.
+Create `esp32/Smart_Water_Management/secrets.h`:
 
-## 3. Start the project once
+```cpp
+#pragma once
 
-Make sure MongoDB is running. Then open one PowerShell terminal in the project folder and start exactly one frontend and one backend:
+const char* WIFI_SSID     = "YOUR_WIFI_NETWORK_NAME";
+const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
+const char* DEVICE_API_KEY = "your-secure-device-secret-key"; // Matches DEVICE_API_KEY in server/.env
+```
 
-```powershell
-cd C:\Users\Admin\Desktop\smart-water-management
+In `esp32/Smart_Water_Management/Smart_Water_Management.ino`, update `SERVER_HOST` to your computer's local Wi-Fi IP address (obtain via `ipconfig` on Windows or `ifconfig` on macOS/Linux):
+
+```cpp
+#define SERVER_HOST "192.168.1.50"  // LAN IP of backend server (do not use localhost on ESP32)
+#define SERVER_PORT "5000"
+```
+
+---
+
+### Step 3: Run the Application
+
+Start both the backend server and frontend development server concurrently:
+
+```bash
 npm run dev
 ```
 
-The combined command prefixes the two logs with `client` and `server`. If either required port is occupied, that process exits clearly and the sibling process is stopped instead of leaving a partial development stack running. Do not also run `npm run dev:client` or `npm run dev:server` in other terminals at the same time.
+* **Frontend:** [http://localhost:5173](http://localhost:5173)
+* **Backend API:** [http://localhost:5000](http://localhost:5000)
+* **Health Check:** [http://localhost:5000/api/health](http://localhost:5000/api/health)
 
-## 4. Open the frontend
+---
 
-Open exactly:
+### Step 4: Flash the ESP32-S3 Firmware
 
-```text
-http://localhost:5173
-```
+1. Open **Arduino IDE**.
+2. Go to **Tools** > **Board** and select **ESP32S3 Dev Module**.
+3. Select your microcontroller's serial port under **Tools** > **Port**.
+4. Open `esp32/Smart_Water_Management/Smart_Water_Management.ino`.
+5. Click **Upload**.
+6. Open the **Serial Monitor** set to **115200 baud** to view real-time connection status and telemetry dispatch logs.
 
-Vite is fixed to port 5173 with `strictPort` enabled. If 5173 is occupied, startup fails with a clear error and never silently switches to 5174.
+---
 
-## 5. Find the laptop IPv4 address on Windows
+## Verification & Automated Testing
 
-The ESP32 cannot use `localhost`, because `localhost` on the ESP32 means the ESP32 itself.
-
-1. Open Command Prompt or PowerShell.
-2. Run `ipconfig`.
-3. Find **Wireless LAN adapter Wi-Fi**.
-4. Copy its **IPv4 Address**, for example `192.168.1.42`.
-5. Ignore loopback addresses such as `127.0.0.1` and disconnected adapters.
-
-## 6. Configure the ESP32 sketch
-
-Open `esp32/secrets.h` and enter the replacement Wi-Fi credentials. It contains only these local values:
-
-```cpp
-constexpr char WIFI_SSID[] = "YOUR_NEW_WIFI_NAME";
-constexpr char WIFI_PASSWORD[] = "YOUR_NEW_WIFI_PASSWORD";
-constexpr char DEVICE_API_KEY[] = "YOUR_NEW_DEVICE_API_KEY";
-```
-
-The endpoint lives in `esp32/Smart_Water_Management/Smart_Water_Management.ino`. Only the host needs changing; both URLs are built from it, so they cannot drift apart:
-
-```cpp
-#define SERVER_HOST "10.231.71.157"   // laptop Wi-Fi IPv4, never localhost
-#define SERVER_PORT "5000"
-#define SERVER_BASE_URL "http://" SERVER_HOST ":" SERVER_PORT
-```
-
-`SERVER_HOST` must be the laptop's current Wi-Fi IPv4 address on the network the ESP32 joins. Confirm it with `ipconfig` and re-check after every reconnect, because DHCP can hand out a different address. Never use `localhost` or `127.0.0.1` here — on the ESP32 those point at the ESP32 itself.
-
-The device key must exactly match `DEVICE_API_KEY` in `server/.env`. Do not copy the device key into the React frontend. The previously exposed Wi-Fi password must also be changed on the router/access point; removing it from source code cannot revoke that old password.
-
-For an ultrasonic-only hardware test, temporarily set this line in `esp32/esp32.ino` and upload again:
-
-```cpp
-constexpr bool SENSOR_ONLY_TEST = true;
-```
-
-This mode never starts Wi-Fi or HTTP. Change it back to `false` and upload again for end-to-end dashboard testing.
-
-## 7. Use the same Wi-Fi network
-
-Connect the ESP32-S3 and the laptop to the same Wi-Fi network. Guest networks and some mobile hotspots block devices from reaching one another; use a network that allows local device communication.
-
-## 8. Upload the Arduino sketch
-
-1. Connect the ESP32-S3 to the laptop with a data-capable USB cable.
-2. In Arduino IDE, select the appropriate ESP32-S3 board and COM port.
-3. Open `esp32/esp32.ino`. It is the only `.ino` file and contains the complete implementation.
-4. Verify/compile the sketch.
-5. Upload it to the board.
-
-## 9. Open Serial Monitor
-
-Open Arduino IDE's Serial Monitor and set the speed to **115200 baud**. About twice per second, a valid network reading should show one line:
-
-```text
-Distance: 24.7 cm | Pulse: 1440 us | HTTP: 200
-```
-
-The sketch takes five samples at least 60 ms apart, ignores invalid samples, requires at least three valid samples, and uses the median. The distance is then rounded once before both printing and sending, so the Serial Monitor and dashboard values match exactly. Readings outside 2–400 cm are not sent.
-
-Useful diagnostics include:
-
-```text
-Distance: 24.7 cm | Pulse: 1440 us | Sensor-only test
-Distance: 24.7 cm | Pulse: 1440 us | Wi-Fi offline
-Distance: 24.7 cm | Pulse: 1440 us | Backend connection failed
-No echo | Pulse: 0 | Check VCC, GND, TRIG GPIO5 and ECHO GPIO6
-```
-
-The valid distance and representative median pulse are printed before the HTTP attempt. Wi-Fi reconnection is non-blocking, so a disconnected network does not stop sensor measurement output.
-
-### Required end-to-end test order
-
-1. Compile `esp32/esp32.ino` with the ESP32-S3 board selected.
-2. Set `SENSOR_ONLY_TEST = true`, upload, and inspect Serial Monitor at 115200 baud.
-3. Confirm real hardware produces stable valid distance lines. A successful compile alone does not prove this physical check.
-4. Start MongoDB, run `npm run dev` once, then test `http://localhost:5000/api/health` and `http://<laptop-lan-ip>:5000/api/health`. Both must return HTTP 200 with `databaseConnected` and `socketReady` set to `true`.
-5. Open `/dashboard`, manually POST `26.5`, and confirm the page changes immediately to `26.5 cm`.
-6. Put newly rotated Wi-Fi credentials in `secrets.h`, set `SENSOR_ONLY_TEST = false`, and upload again.
-7. Confirm Serial Monitor shows `HTTP: 200` after each valid filtered reading.
-8. Confirm that the dashboard changes without refreshing and displays the exact same one-decimal value.
-
-## 10. Test the POST endpoint manually
-
-Before using the ESP32, you can verify the backend from Windows Command Prompt. Replace the example key with the value in `server/.env`:
-
-```bat
-curl -X POST http://localhost:5000/api/sensors/ultrasonic -H "Content-Type: application/json" -H "x-device-key: replace-with-a-long-random-secret" -d "{\"deviceId\":\"tank-01\",\"distanceCm\":26.5}"
-```
-
-A successful request returns HTTP 200 and the saved reading. Postman can send the same request by choosing POST, selecting raw JSON, adding `Content-Type: application/json`, and adding the `x-device-key` header.
-
-PowerShell alternative:
-
-```powershell
-$headers = @{ "x-device-key" = "replace-with-the-key-from-server-env" }
-$body = @{ deviceId = "tank-01"; distanceCm = 26.5 } | ConvertTo-Json
-Invoke-RestMethod -Method Post `
-  -Uri "http://localhost:5000/api/sensors/ultrasonic" `
-  -Headers $headers `
-  -ContentType "application/json" `
-  -Body $body
-```
-
-Useful negative tests:
-
-- Remove or change `x-device-key`: expect HTTP 401.
-- Send `distanceCm` below 2 or above 400: expect HTTP 400.
-- Send an empty `deviceId`: expect HTTP 400.
-
-## 11. Log in and view the live distance
-
-1. Open `http://localhost:5173/register` and create an account if needed.
-2. With the default `EMAIL_MODE=console`, read the six-digit verification code from the backend terminal and verify the account.
-3. Log in. Successful login redirects directly to `/dashboard`.
-4. The dashboard shows both tank levels, the derived volume against the 8 L capacity, the pump state, the automatic-control reasoning and any active alerts.
-5. Move an object in front of the sensor. Confirm that Serial Monitor prints about two values per second and the dashboard changes to the same value without a page refresh.
-
-The JWT remains in the existing HTTP-only cookie. Axios sends that cookie with the protected GET request; the secret token is not exposed to React. Opening any signed-in page without a valid cookie redirects to `/login`.
-
-Values the device has not reported are shown as **Waiting for data** or **Not available**. They are never filled in with `0`, `50%`, or any other placeholder number, so anything that looks like a reading is a reading.
-
-## 11. Roles and permissions
-
-Smart Water Management uses a per-device membership role model (`DeviceMember`):
-
-| Capability | Admin | Controller | Viewer |
-| --- | :---: | :---: | :---: |
-| Monitor live telemetry & water levels | yes | yes | yes |
-| View alerts and device details | yes | yes | yes |
-| View telemetry history & export CSV | yes | yes | yes |
-| Operate pump controls (AUTO/MANUAL, ON/OFF, Moteur permission) | yes | yes | no |
-| Configure tank physical dimensions & capacities | yes | no | no |
-| Rename device | yes | no | no |
-| Clear resolved alerts | yes | no | no |
-| Manage household members (add, role change, remove) | yes | no | no |
-| Claim an unowned device | yes | no | no |
-
-A disabled account is refused at every entry path, including Google and GitHub sign-in, and its existing session stops working on the next request.
-
-## 11c. Verifying the build
+The repository includes a comprehensive test suite for security, role authorization, tank volume algorithms, and telemetry formats:
 
 ```bash
-npm run verify     # backend syntax + frontend lint + all tests + production build
-npm test           # unit tests only (41 tests, no database required)
-npm run lint       # frontend lint only
+# Run all verification checks (syntax checks, frontend linting, tests, and build)
+npm run verify
+
+# Run unit tests only across backend and frontend
+npm test
+
+# Run frontend code quality linter
+npm run lint
+
+# Validate production bundle build
+npm run build:client
 ```
 
-## 12. Troubleshooting
+---
 
-### Check and stop only the process using a required port
+## Core API Reference
 
-Do not terminate every `node.exe` process. Inspect only the two required ports from Command Prompt or PowerShell:
+### Health Check
 
-```bat
-netstat -ano | findstr :5000
-netstat -ano | findstr :5173
+```http
+GET /api/health
 ```
 
-Use the PID in the last column of the row whose state is `LISTENING`. Confirm that specific process before stopping it, replacing `1234` with the actual PID:
-
-```bat
-tasklist /FI "PID eq 1234"
-taskkill /PID 1234 /F
-```
-
-Run the matching `netstat` command again to confirm the port is free, then start the project once with `npm run dev`. Never run the combined command and the individual client/server commands simultaneously.
-
-### No echo or no Serial Monitor output
-
-`No echo` is a sensor/wiring problem, not a dashboard problem. Set `SENSOR_ONLY_TEST = true`, upload `esp32/esp32.ino`, and use Serial Monitor at 115200 baud. Verify VCC → 5V, GND → GND, TRIG → GPIO 5, and ECHO → GPIO 6 through safe 5V-to-3.3V level shifting. If absolutely nothing prints, confirm the selected ESP32-S3 board, COM port, data-capable USB cable, uploaded sketch, and 115200 baud setting.
-
-### Windows Firewall
-
-If the ESP32 shows connection errors, allow Node.js through Windows Defender Firewall on **Private networks**, or create an inbound rule for TCP port 5000. Keep the rule limited to trusted private networks. Confirm the backend is running and try `http://LAPTOP_IPV4:5000` from another device on the same Wi-Fi.
-
-### CORS errors in the browser
-
-`FRONTEND_URL` must exactly match the browser's frontend origin, including protocol and port. For the normal local setup use `http://localhost:5173`. Keep `VITE_API_URL` and `VITE_SOCKET_URL` set to `http://localhost:5000`. If you open the frontend using the laptop IP, set all three origins consistently, then restart both backend and Vite.
-
-### Socket.IO connection failures
-
-In browser developer tools, open **Network** and look for a `/socket.io/` polling or WebSocket request. A blocked CORS response means `FRONTEND_URL` does not exactly match `http://localhost:5173`. Confirm `VITE_SOCKET_URL=http://localhost:5000`, restart Vite after changing frontend variables, and restart the backend after changing `FRONTEND_URL`. The client reconnects automatically and the dashboard removes all listeners when it unmounts.
-
-### Invalid device key
-
-HTTP 401 from the POST endpoint means the `x-device-key` value does not exactly match `DEVICE_API_KEY` in `server/.env`. Check for placeholder text, extra spaces, and a stale backend process. Restart the backend after changing its environment file.
-
-### Sensor shows Offline
-
-The dashboard shows Offline when no valid reading has reached the server in the last three seconds. Check Serial Monitor for a new `HTTP: 200` line about every 500 ms, invalid 2–400 cm readings, Wi-Fi status, the laptop IPv4 address, and firewall rules. The latest distance remains visible while Offline. Restarting the backend clears its in-memory reading, so the dashboard waits until the ESP32 posts again.
-
-### Backend works on localhost but the ESP32 cannot connect
-
-`localhost` works only from the laptop. Confirm that `SERVER_URL` in the sketch uses the IPv4 address from the laptop's active **Wireless LAN adapter Wi-Fi**, not `localhost`, VMware, VirtualBox, or Ethernet-only adapter addresses. Keep both devices on the same non-guest Wi-Fi, allow Node.js through the Private-network firewall, restart the backend, and re-upload the sketch after changing its URL or device key. A `Backend connection failed` suffix means the ESP32 cannot reach the laptop; HTTP 401 means the device key is different from `server/.env`.
-
-### Backend unavailable
-
-Confirm MongoDB is running, then confirm the `server` output from `npm run dev` reports `http://0.0.0.0:5000`. Check that `VITE_API_URL` is `http://localhost:5000` and restart the combined command after changing `client/.env`.
-
-### VS Code says `WiFi.h` cannot be found
-
-The generic Microsoft C/C++ extension does not automatically load Arduino board libraries, so it can show a red `WiFi.h` underline even when the ESP32 core is installed. Compile and upload with Arduino IDE: open `esp32/esp32.ino`, select **ESP32S3 Dev Module** (or the exact ESP32-S3 board you own), select its COM port, and click Upload. The project has been compiled successfully with the installed ESP32 3.3.10 core. If you want an Arduino-aware workflow inside VS Code, install and configure PlatformIO instead of relying on the generic C/C++ extension alone.
-
-## API summary
-
-### `POST /api/sensors/ultrasonic`
-
-Requires `x-device-key`. Accepted JSON:
-
-```json
-{
-  "deviceId": "tank-01",
-  "distanceCm": 24.7
-}
-```
-
-### `GET /api/sensors/ultrasonic/latest`
-
-Requires the existing authenticated user cookie. A reading response is:
-
-```json
-{
-  "deviceId": "tank-01",
-  "distanceCm": 24.7,
-  "receivedAt": "2026-07-22T12:00:00.000Z",
-  "isOnline": true
-}
-```
-
-### `GET /api/health`
-
-Does not require authentication. Test it from both the laptop and the Wi-Fi address:
-
-```text
-http://localhost:5000/api/health
-http://<laptop-lan-ip>:5000/api/health
-```
-
-Both return:
-
+**Response (HTTP 200):**
 ```json
 {
   "success": true,
   "status": "ok",
   "databaseConnected": true,
   "socketReady": true,
-  "timestamp": "2026-07-22T12:00:00.000Z"
+  "timestamp": "2026-09-03T09:00:00.000Z"
 }
 ```
 
-If localhost works but the Wi-Fi URL does not, confirm the backend log says `http://0.0.0.0:5000` and allow Node.js or TCP port 5000 through Windows Firewall on the profile the Wi-Fi adapter is using (check with `Get-NetConnectionProfile`; a phone hotspot is usually classified Public, not Private):
+---
 
-```text
-netsh advfirewall firewall add rule name="Smart Water Backend Port 5000" dir=in action=allow protocol=TCP localport=5000
+### Sensor Telemetry Ingestion
+
+```http
+POST /api/sensors/ultrasonic
+Content-Type: application/json
+x-device-key: <DEVICE_API_KEY>
 ```
 
-### Socket.IO event
-
-Every accepted POST immediately emits the normalized telemetry object:
-
-```text
-ultrasonic:update
-{"deviceId":"tank-01","upperTank":{...},"lowerTank":{...},"pumpStatus":"ON","pumpRunning":true,"systemEnabled":true,"pumpMode":"AUTO","receivedAt":"...","timestamp":"..."}
+**Request Body:**
+```json
+{
+  "deviceId": "swm-1C047B9205D4",
+  "upperDistanceCm": 24.5,
+  "lowerDistanceCm": 18.2,
+  "waterFlowDetected": true,
+  "powerSource": "DAWLE"
+}
 ```
+
+---
+
+### Hardware Pump Control State Polling
+
+```http
+GET /api/device/control?deviceId=swm-1C047B9205D4
+```
+
+**Response (HTTP 200):**
+```json
+{
+  "deviceId": "swm-1C047B9205D4",
+  "systemEnabled": true,
+  "pumpMode": "AUTO",
+  "manualPumpState": "OFF",
+  "allowPumpOnMoteur": false,
+  "updatedAt": "2026-09-03T09:00:00.000Z"
+}
+```
+
+---
+
+### Real-Time WebSocket Events (Socket.IO)
+
+Clients subscribe to live telemetry broadcasts emitted whenever new readings are ingested:
+
+```javascript
+import { io } from "socket.io-client";
+
+const socket = io("http://localhost:5000", { withCredentials: true });
+
+socket.on("ultrasonic:update", (telemetry) => {
+  console.log("Device:", telemetry.deviceId);
+  console.log("Upper Tank Level:", telemetry.upperTank.percentage, "%");
+  console.log("Lower Tank Level:", telemetry.lowerTank.percentage, "%");
+  console.log("Pump State:", telemetry.pumpStatus);
+});
+```
+
+---
+
+## Troubleshooting Guide
+
+### Port Availability (`5000` or `5173` already in use)
+
+To identify and terminate processes occupying required ports on Windows:
+
+```powershell
+# Identify the process ID (PID)
+netstat -ano | findstr :5000
+netstat -ano | findstr :5173
+
+# Terminate the process by PID
+taskkill /PID <PID> /F
+```
+
+### Microcontroller Cannot Connect to Backend
+1. **IP Configuration:** Ensure `SERVER_HOST` in `Smart_Water_Management.ino` is set to the computer's actual Wi-Fi IPv4 address (e.g., `192.168.x.x`), **not** `localhost` or `127.0.0.1`.
+2. **Subnet Isolation:** Confirm that both the computer and the ESP32-S3 are connected to the same Wi-Fi network and that client isolation (AP isolation) is disabled on your router.
+3. **Firewall Rules:** Allow incoming connections on port 5000 through the Windows Defender Firewall:
+   ```powershell
+   netsh advfirewall firewall add rule name="Node Backend 5000" dir=in action=allow protocol=TCP localport=5000
+   ```
+
+### Device Key Rejection (HTTP 401)
+* Verify that `DEVICE_API_KEY` in `server/.env` exactly matches `DEVICE_API_KEY` in `esp32/Smart_Water_Management/secrets.h`.
+* Confirm no extraneous leading or trailing whitespace characters exist in either file.
+
+---
+
+## License
+
+This project is licensed under the MIT License.
