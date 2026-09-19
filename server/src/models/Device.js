@@ -72,10 +72,12 @@ const deviceSchema = new mongoose.Schema(
       upper: {
         capacityLiters: { type: Number, default: null },
         heightCm: { type: Number, default: null },
+        sensorOffsetCm: { type: Number, default: 0 },
       },
       lower: {
         capacityLiters: { type: Number, default: null },
         heightCm: { type: Number, default: null },
+        sensorOffsetCm: { type: Number, default: 0 },
       },
       configuredAt: { type: Date, default: null },
       configuredBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },

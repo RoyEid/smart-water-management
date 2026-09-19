@@ -13,6 +13,7 @@ const TANK_STATUSES = [
 const tankSchema = new mongoose.Schema(
   {
     distanceCm: { type: Number, default: 0 },
+    rawDistanceCm: { type: Number, default: null },
     percentage: { type: Number, default: 0 },
     waterHeightCm: { type: Number, default: 0 },
     tankStatus: { type: String, enum: TANK_STATUSES, default: "Normal" },

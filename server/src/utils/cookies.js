@@ -10,7 +10,7 @@ export function getCookieOptions(rememberMe = false) {
 
   if (rememberMe) {
     const days = parseInt(process.env.COOKIE_EXPIRES_DAYS || "7", 10);
-    options.maxAge = days * 24 * 60 * 60 * 1000; // in milliseconds
+    options.maxAge = days * 24 * 60 * 60 * 1000;
   }
 
   return options;
@@ -23,7 +23,6 @@ export function setAuthCookie(res, token, rememberMe = false) {
 
 export function clearAuthCookie(res) {
   const options = getCookieOptions(false);
-  // Ensure same attributes (path, domain, etc.) except maxAge are used when clearing
   const clearOptions = { ...options };
   delete clearOptions.maxAge;
   res.clearCookie("auth_token", clearOptions);

@@ -1,4 +1,3 @@
-import Device from "../models/Device.js";
 import UltrasonicReading from "../models/UltrasonicReading.js";
 import { getUserAccessibleDevices } from "../services/deviceAccessService.js";
 import { serializeStoredReading } from "./deviceController.js";

@@ -1,25 +1,12 @@
 import Alert, { ALERT_CODES } from "../models/Alert.js";
 import { emitAlertCreated, emitAlertResolved } from "../realtime/socketServer.js";
-
-// These mirror the firmware's safety constants so the dashboard explains the
-// same rules the hardware actually enforces. They are read-only here: the
-// firmware remains the single place where the pump decision is made.
 const LOWER_CRITICAL_LEVEL = 10.0; // LOWER_STOP_LEVEL
 const UPPER_FULL_LEVEL = 90.0; // UPPER_PUMP_OFF_LEVEL
 const DEVICE_OFFLINE_MS = 20_000;
 
-// An unchanged condition is refreshed at most this often. Without it, a
-// condition lasting an hour would issue a database write every 2 s telemetry
-// cycle purely to bump a timestamp.
 const TOUCH_INTERVAL_MS = 60_000;
 
-/**
- * Which alert codes are currently open, per device.
- *
- * MongoDB stays the source of truth — this is a cache that lets a normal
- * telemetry cycle (nothing wrong, nothing changed) cost zero queries. It is
- * rebuilt from the database at boot, so a restart cannot resurrect duplicates.
- */
+
 const openAlerts = new Map(); // deviceId -> Map<code, { id, lastTouchedAt }>
 
 function getDeviceMap(deviceId) {
@@ -33,12 +20,6 @@ function isFiniteNumber(value) {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-/**
- * Derives the set of conditions that are true right now.
- *
- * Returns descriptors rather than writing anything, so the decision logic can
- * be reasoned about (and tested) separately from the persistence.
- */
 export function deriveConditions(reading, { isOnline }) {
   const conditions = [];
 
@@ -56,9 +37,6 @@ export function deriveConditions(reading, { isOnline }) {
       context: { lastSeenAt: reading.receivedAt },
     });
 
-    // Every other condition below is derived from live sensor values. Once the
-    // device is offline those values are stale, so re-raising them would be
-    // reporting a reading that is no longer known to be true.
     return conditions;
   }
 
@@ -134,13 +112,6 @@ export function deriveConditions(reading, { isOnline }) {
   return conditions;
 }
 
-/**
- * Reconciles the stored alerts for a device with the conditions that are true
- * now: opens what is newly true, refreshes what is still true, resolves what
- * has stopped being true.
- *
- * Never throws — an alerting problem must not reject a valid device reading.
- */
 export async function syncAlerts(reading, { isOnline }) {
   if (!reading?.deviceId) return;
 
@@ -175,8 +146,6 @@ export async function syncAlerts(reading, { isOnline }) {
         continue;
       }
 
-      // Still true and already recorded: refresh at most once a minute so a
-      // long-running condition does not generate a write per telemetry cycle.
       if (now - existing.lastTouchedAt >= TOUCH_INTERVAL_MS) {
         existing.lastTouchedAt = now;
         await Alert.updateOne(
@@ -202,12 +171,6 @@ export async function syncAlerts(reading, { isOnline }) {
   }
 }
 
-/**
- * Rebuilds the in-memory open-alert cache from the database at boot.
- *
- * Without this, a restart would treat every still-open condition as new and
- * create a duplicate row the first time telemetry arrived.
- */
 export async function hydrateOpenAlerts() {
   try {
     const open = await Alert.find({ isResolved: false })
@@ -218,8 +181,7 @@ export async function hydrateOpenAlerts() {
     for (const alert of open) {
       getDeviceMap(alert.deviceId).set(alert.code, {
         id: alert._id,
-        // Backdated so the first telemetry cycle after a restart refreshes the
-        // timestamp once, confirming the condition is genuinely still true.
+
         lastTouchedAt: 0,
       });
     }
@@ -232,12 +194,6 @@ export async function hydrateOpenAlerts() {
   }
 }
 
-/**
- * Raises the offline alert when telemetry simply stops.
- *
- * syncAlerts only runs when a reading arrives, so a device that goes silent
- * would otherwise never trigger anything. Called on a timer from server.js.
- */
 export async function sweepOfflineDevices(getLatest) {
   const reading = getLatest();
   if (!reading?.receivedAt) return;
@@ -245,9 +201,6 @@ export async function sweepOfflineDevices(getLatest) {
   const age = Date.now() - new Date(reading.receivedAt).getTime();
   const isOnline = age < DEVICE_OFFLINE_MS;
 
-  // Only the offline transition needs a sweep. While the device is online its
-  // own telemetry drives syncAlerts, and re-running it here would double the
-  // evaluation rate for no benefit.
   if (isOnline) return;
 
   await syncAlerts(reading, { isOnline: false });

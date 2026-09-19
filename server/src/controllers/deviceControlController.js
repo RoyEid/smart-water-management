@@ -1,4 +1,3 @@
-import Device from "../models/Device.js";
 import {
   getDeviceControlState,
   getDeviceControlStateAsync,
@@ -14,8 +13,9 @@ import { AUDIT_ACTIONS } from "../models/AuditLog.js";
 
 export async function getDeviceControl(req, res, next) {
   try {
-    if (req.device?.deviceId) {
-      const deviceId = req.device.deviceId;
+    const isDeviceAuth = Boolean(req.get("x-device-key"));
+    if (isDeviceAuth || req.device?.deviceId) {
+      const deviceId = req.device?.deviceId || req.query?.deviceId || "tank-01";
       const control = await getDeviceControlStateAsync(deviceId);
       return res.status(200).json({
         success: true,

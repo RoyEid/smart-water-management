@@ -1,4 +1,3 @@
-import Device from "../models/Device.js";
 import { getAnalyticsOverview } from "../services/analyticsService.js";
 import { getUserAccessibleDevices } from "../services/deviceAccessService.js";
 

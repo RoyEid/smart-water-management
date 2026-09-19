@@ -9,10 +9,10 @@ function convertMetersToCm(meters) {
   return Math.round(meters * 100);
 }
 
-function calculateWaterPercentage(waterDistanceCm, usableHeightCm, mountingOffsetCm = 5.0) {
+function calculateWaterPercentage(waterDistanceCm, usableHeightCm, mountingOffsetCm = 0.0) {
   if (usableHeightCm == null || usableHeightCm <= 0) return null;
-  const emptyDistance = mountingOffsetCm + usableHeightCm;
-  const waterHeight = Math.max(0, Math.min(usableHeightCm, emptyDistance - waterDistanceCm));
+  const calibratedDistance = Math.max(0, Math.min(usableHeightCm, waterDistanceCm - mountingOffsetCm));
+  const waterHeight = Math.max(0, Math.min(usableHeightCm, usableHeightCm - calibratedDistance));
   const percentage = (waterHeight / usableHeightCm) * 100;
   return Math.max(0, Math.min(100, percentage));
 }

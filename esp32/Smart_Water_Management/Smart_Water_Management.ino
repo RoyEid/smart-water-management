@@ -3,15 +3,13 @@
 #include <WiFi.h>
 
 
-// =====================================
 // Backend configuration
-// =====================================
 
 // Laptop Wi-Fi IPv4 address running the Express backend.
 // Must be the LAN IP of the machine, never localhost / 127.0.0.1.
 // Re-check with "ipconfig" whenever the laptop rejoins the hotspot,
 // because DHCP can hand out a different address.
-#define SERVER_HOST "10.186.142.157"
+#define SERVER_HOST "10.87.194.157"
 #define SERVER_PORT "5000"
 
 // Built from the parts above so the two endpoints can never drift apart
@@ -27,9 +25,7 @@ const char *SERVER_URL = SERVER_BASE_URL "/api/sensors/ultrasonic";
 String CONTROL_URL =
     String(SERVER_BASE_URL) + "/api/device/control?deviceId=" + DEVICE_ID;
 
-// =====================================
 // Pins
-// =====================================
 
 // Upper tank
 const int UPPER_TRIG_PIN = 7;
@@ -42,22 +38,24 @@ const int LOWER_ECHO_PIN = 13;
 // Pump relay
 const int RELAY_PIN = 4;
 
-// =====================================
 // Tank usable height & dead-zone configuration
-// =====================================
+
+// Upper tank physical calibration:
+// D_empty = distance from sensor face to tank bottom when empty (cm)
+// D_full  = distance from sensor face to 100% full water line (cm)
+// usableHeight = D_empty - D_full (cm)
+float upper_D_empty = 25.0; // Distance from sensor face to tank bottom when empty (cm)
+float upper_D_full = 5.0;   // Distance from sensor face to 100% full water line (cm)
+float upperUsableHeight = upper_D_empty - upper_D_full; // Usable water height (cm)
 
 // Synced dynamically from backend. Retained in memory across network drops.
-float upperTankUsableHeightCm = 20.0; // Fallback default until synced
-float lowerTankUsableHeightCm = 20.0; // Fallback default until synced
-float upperCapacityLiters = 1000.0;   // Fallback default until synced
-float lowerCapacityLiters = 1000.0;   // Fallback default until synced
+// Calibrated independently for upper and lower tanks:
+float upperTankHeightCm = 20.0;     // Fallback default until synced
+float lowerTankHeightCm = 20.0;     // Fallback default until synced
+float upperSensorOffsetCm = 5.0;    // Sensor mounting offset / dead zone (D_full)
+float lowerSensorOffsetCm = 0.0;    // Sensor mounting offset / dead zone (distance from sensor to full water mark)
 
-// Internal mounting dead-zone (sensor face to full water mark)
-const float SENSOR_MOUNTING_OFFSET_CM = 5.0;
-
-// =====================================
 // Automatic pump thresholds
-// =====================================
 
 // Start filling upper tank at or below 20%
 const float UPPER_PUMP_ON_LEVEL = 20.0;
@@ -77,9 +75,7 @@ const int RELAY_OFF = HIGH;
 
 bool pumpRunning = false;
 
-// =====================================
 // Remote control state
-// =====================================
 
 bool systemEnabled = true;
 String pumpMode = "AUTO";
@@ -91,9 +87,7 @@ const unsigned long SEND_INTERVAL = 2000;
 unsigned long lastControlFetchTime = 0;
 const unsigned long CONTROL_FETCH_INTERVAL = 2000;
 
-// =====================================
 // Water flow presence detection (YF-S201)
-// =====================================
 
 // Signal pin. GPIO 4 is deliberately avoided because it drives the relay.
 const int FLOW_SENSOR_PIN = 18;
@@ -120,9 +114,7 @@ void IRAM_ATTR pulseCounter() {
   portEXIT_CRITICAL_ISR(&flowMux);
 }
 
-// =====================================
 // Electricity source detection (Dawle / Moteur)
-// =====================================
 
 // Voltage detection sensor for Dawle (government electricity).
 // Connected to GPIO 3 (ADC1_CH2 on ESP32-S3).
@@ -147,9 +139,7 @@ String candidatePowerSource = "MOTEUR";
 unsigned long candidateSourceStartTime = 0;
 unsigned long lastPowerSourceEvalTime = 0;
 
-// =====================================
 // Function declarations
-// =====================================
 
 void connectWiFi();
 void fetchDeviceControlState();
@@ -159,8 +149,9 @@ bool isDawleSignalPresent();
 
 float readDistanceCm(int trigPin, int echoPin);
 float readStableDistance(int trigPin, int echoPin);
-float calculatePercentage(float distance, float usableHeightCm);
-float calculateWaterHeight(float distance, float usableHeightCm);
+float calculateCalibratedDistance(float rawDistance, float sensorOffsetCm, float tankHeightCm);
+float calculateWaterHeight(float calibratedDistance, float tankHeightCm);
+float calculatePercentage(float waterHeight, float tankHeightCm);
 
 String getTankStatus(float percentage);
 
@@ -170,20 +161,22 @@ void pumpOn();
 void pumpOff();
 String getPumpStatus();
 
-int sendReading(float upperDistance, float upperPercentage,
-                float upperWaterHeight, const String &upperStatus,
-                float lowerDistance, float lowerPercentage,
+int sendReading(float upperCalibratedDistance, float upperRawDistance,
+                float upperPercentage, float upperWaterHeight,
+                const String &upperStatus, float lowerCalibratedDistance,
+                float lowerRawDistance, float lowerPercentage,
                 float lowerWaterHeight, const String &lowerStatus);
 
 void sendSensorError(const String &sensorName);
 
-void printReadings(float upperDistance, float upperPercentage,
-                   const String &upperStatus, float lowerDistance,
+void printReadings(float upperRawDistance, float upper_D_full,
+                   float upperUsableHeight, float upperWaterHeight,
+                   float upperPercentage, const String &upperStatus,
+                   float lowerRawDistance, float lowerCalibratedDistance,
+                   float lowerTankHeight, float lowerWaterHeight,
                    float lowerPercentage, const String &lowerStatus);
 
-// =====================================
 // Setup
-// =====================================
 
 void setup() {
   Serial.begin(115200);
@@ -245,9 +238,7 @@ void setup() {
   Serial.println("=================================");
 }
 
-// =====================================
 // Main loop
-// =====================================
 
 void loop() {
   if (WiFi.status() != WL_CONNECTED) {
@@ -296,34 +287,37 @@ void loop() {
     return;
   }
 
-  float upperPercentage =
-      calculatePercentage(upperDistance, upperTankUsableHeightCm);
+  // Upper tank: proper calibration based on D_empty, D_full, usableHeight
+  // D_empty = sensor face to tank bottom when empty
+  // D_full  = sensor face to 100% full water line
+  // usableHeight = D_empty - D_full
+  float upperCalibratedDistance = upperDistance - upper_D_full;
+  float upperWaterHeight = constrain(upperUsableHeight - upperCalibratedDistance, 0.0, upperUsableHeight);
+  float upperPercentage = constrain((upperWaterHeight / upperUsableHeight) * 100.0, 0.0, 100.0);
 
-  float lowerPercentage =
-      calculatePercentage(lowerDistance, lowerTankUsableHeightCm);
-
-  float upperWaterHeight =
-      calculateWaterHeight(upperDistance, upperTankUsableHeightCm);
-
+  // Lower tank calculation (kept unchanged)
+  float lowerCalibratedDistance =
+      calculateCalibratedDistance(lowerDistance, lowerSensorOffsetCm, lowerTankHeightCm);
   float lowerWaterHeight =
-      calculateWaterHeight(lowerDistance, lowerTankUsableHeightCm);
+      calculateWaterHeight(lowerCalibratedDistance, lowerTankHeightCm);
+  float lowerPercentage =
+      calculatePercentage(lowerWaterHeight, lowerTankHeightCm);
 
   String upperStatus = getTankStatus(upperPercentage);
-
   String lowerStatus = getTankStatus(lowerPercentage);
 
   updatePump(upperPercentage, lowerPercentage);
 
-  printReadings(upperDistance, upperPercentage, upperStatus, lowerDistance,
-                lowerPercentage, lowerStatus);
+  printReadings(upperDistance, upper_D_full, upperUsableHeight,
+                upperWaterHeight, upperPercentage, upperStatus,
+                lowerDistance, lowerCalibratedDistance, lowerTankHeightCm,
+                lowerWaterHeight, lowerPercentage, lowerStatus);
 
-  sendReading(upperDistance, upperPercentage, upperWaterHeight, upperStatus,
-              lowerDistance, lowerPercentage, lowerWaterHeight, lowerStatus);
+  sendReading(upperCalibratedDistance, upperDistance, upperPercentage, upperWaterHeight, upperStatus,
+              lowerCalibratedDistance, lowerDistance, lowerPercentage, lowerWaterHeight, lowerStatus);
 }
 
-// =====================================
 // Wi-Fi
-// =====================================
 
 void connectWiFi() {
   static bool connectionStarted = false;
@@ -371,9 +365,7 @@ void connectWiFi() {
   }
 }
 
-// =====================================
 // Backend control
-// =====================================
 
 void fetchDeviceControlState() {
   if (WiFi.status() != WL_CONNECTED) {
@@ -429,8 +421,11 @@ void fetchDeviceControlState() {
         valStr.trim();
         if (valStr != "null") {
           float val = valStr.toFloat();
-          if (val > 0.0)
-            upperTankUsableHeightCm = val;
+          if (val > 0.0) {
+            upperTankHeightCm = val;
+            upperUsableHeight = val;
+            upper_D_empty = upper_D_full + upperUsableHeight;
+          }
         }
       }
     }
@@ -447,14 +442,14 @@ void fetchDeviceControlState() {
         if (valStr != "null") {
           float val = valStr.toFloat();
           if (val > 0.0)
-            lowerTankUsableHeightCm = val;
+            lowerTankHeightCm = val;
         }
       }
     }
 
-    int upperCapIdx = payload.indexOf("\"upperCapacityLiters\":");
-    if (upperCapIdx != -1) {
-      int start = upperCapIdx + 22;
+    int upperOffIdx = payload.indexOf("\"upperSensorOffsetCm\":");
+    if (upperOffIdx != -1) {
+      int start = upperOffIdx + 22;
       int end = payload.indexOf(",", start);
       if (end == -1)
         end = payload.indexOf("}", start);
@@ -462,16 +457,16 @@ void fetchDeviceControlState() {
         String valStr = payload.substring(start, end);
         valStr.trim();
         if (valStr != "null") {
-          float val = valStr.toFloat();
-          if (val > 0.0)
-            upperCapacityLiters = val;
+          upperSensorOffsetCm = valStr.toFloat();
+          upper_D_full = upperSensorOffsetCm;
+          upper_D_empty = upper_D_full + upperUsableHeight;
         }
       }
     }
 
-    int lowerCapIdx = payload.indexOf("\"lowerCapacityLiters\":");
-    if (lowerCapIdx != -1) {
-      int start = lowerCapIdx + 22;
+    int lowerOffIdx = payload.indexOf("\"lowerSensorOffsetCm\":");
+    if (lowerOffIdx != -1) {
+      int start = lowerOffIdx + 22;
       int end = payload.indexOf(",", start);
       if (end == -1)
         end = payload.indexOf("}", start);
@@ -479,9 +474,7 @@ void fetchDeviceControlState() {
         String valStr = payload.substring(start, end);
         valStr.trim();
         if (valStr != "null") {
-          float val = valStr.toFloat();
-          if (val > 0.0)
-            lowerCapacityLiters = val;
+          lowerSensorOffsetCm = valStr.toFloat();
         }
       }
     }
@@ -515,9 +508,7 @@ void fetchDeviceControlState() {
   http.end();
 }
 
-// =====================================
 // Ultrasonic sensors
-// =====================================
 
 float readDistanceCm(int trigPin, int echoPin) {
   digitalWrite(trigPin, LOW);
@@ -579,27 +570,31 @@ float readStableDistance(int trigPin, int echoPin) {
   return readings[validCount / 2];
 }
 
-// =====================================
 // Tank calculations
-// =====================================
 
-float calculatePercentage(float distance, float usableHeightCm) {
-  if (usableHeightCm <= 0.0)
-    return 0.0;
-  float emptyDistance = SENSOR_MOUNTING_OFFSET_CM + usableHeightCm;
-  float waterHeight = constrain(emptyDistance - distance, 0.0, usableHeightCm);
-  float percentage = (waterHeight / usableHeightCm) * 100.0;
-
-  return constrain(percentage, 0.0, 100.0);
+// Derives calibrated distance to water surface (distance from 100% full line to water level)
+// Accounting for sensor mounting offset / dead zone
+float calculateCalibratedDistance(float rawDistance, float sensorOffsetCm, float tankHeightCm) {
+  if (rawDistance < 0.0)
+    return -1.0;
+  float calibrated = rawDistance - sensorOffsetCm;
+  return constrain(calibrated, 0.0, tankHeightCm);
 }
 
-float calculateWaterHeight(float distance, float usableHeightCm) {
-  if (usableHeightCm <= 0.0)
+// waterHeight = tankHeight - measuredDistance
+float calculateWaterHeight(float calibratedDistance, float tankHeightCm) {
+  if (tankHeightCm <= 0.0 || calibratedDistance < 0.0)
     return 0.0;
-  float emptyDistance = SENSOR_MOUNTING_OFFSET_CM + usableHeightCm;
-  float waterHeight = constrain(emptyDistance - distance, 0.0, usableHeightCm);
+  float waterHeight = tankHeightCm - calibratedDistance;
+  return constrain(waterHeight, 0.0, tankHeightCm);
+}
 
-  return waterHeight;
+// percentage = clamp((waterHeight / tankHeight) * 100, 0, 100)
+float calculatePercentage(float waterHeight, float tankHeightCm) {
+  if (tankHeightCm <= 0.0)
+    return 0.0;
+  float percentage = (waterHeight / tankHeightCm) * 100.0;
+  return constrain(percentage, 0.0, 100.0);
 }
 
 String getTankStatus(float percentage) {
@@ -622,9 +617,7 @@ String getTankStatus(float percentage) {
   return "Full";
 }
 
-// =====================================
 // Automatic pump control
-// =====================================
 
 void updatePump(float upperPercentage, float lowerPercentage) {
   // System disabled
@@ -710,9 +703,7 @@ void updatePump(float upperPercentage, float lowerPercentage) {
   }
 }
 
-// =====================================
 // Pump relay
-// =====================================
 
 void pumpOn() {
   if (pumpRunning) {
@@ -739,9 +730,7 @@ void pumpOff() {
 
 String getPumpStatus() { return pumpRunning ? "ON" : "OFF"; }
 
-// =====================================
 // Electricity source presence detection (Dawle / Moteur)
-// =====================================
 
 // Samples the AC waveform on VOLTAGE_SENSOR_PIN over VOLTAGE_SAMPLE_WINDOW_MS.
 // Active AC voltage oscillates sinusoidally, producing Vmax - Vmin > threshold.
@@ -807,9 +796,7 @@ void updatePowerSourceDetection() {
   }
 }
 
-// =====================================
 // Water flow presence detection
-// =====================================
 
 // Evaluates pulse arrival periodically to decide binary waterFlowDetected
 // state. Monitoring only: never calls pumpOn() / pumpOff().
@@ -839,13 +826,12 @@ void updateFlowMeter() {
   }
 }
 
-// =====================================
 // Send both tanks to backend
-// =====================================
 
-int sendReading(float upperDistance, float upperPercentage,
-                float upperWaterHeight, const String &upperStatus,
-                float lowerDistance, float lowerPercentage,
+int sendReading(float upperCalibratedDistance, float upperRawDistance,
+                float upperPercentage, float upperWaterHeight,
+                const String &upperStatus, float lowerCalibratedDistance,
+                float lowerRawDistance, float lowerPercentage,
                 float lowerWaterHeight, const String &lowerStatus) {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("Skipping POST: Wi-Fi not connected");
@@ -875,7 +861,11 @@ int sendReading(float upperDistance, float upperPercentage,
 
   json += "\"upperTank\":{";
   json += "\"distanceCm\":";
-  json += String(upperDistance, 1);
+  json += String(upperCalibratedDistance, 1);
+  json += ",";
+
+  json += "\"rawDistanceCm\":";
+  json += String(upperRawDistance, 1);
   json += ",";
 
   json += "\"percentage\":";
@@ -893,7 +883,11 @@ int sendReading(float upperDistance, float upperPercentage,
 
   json += "\"lowerTank\":{";
   json += "\"distanceCm\":";
-  json += String(lowerDistance, 1);
+  json += String(lowerCalibratedDistance, 1);
+  json += ",";
+
+  json += "\"rawDistanceCm\":";
+  json += String(lowerRawDistance, 1);
   json += ",";
 
   json += "\"percentage\":";
@@ -969,9 +963,7 @@ int sendReading(float upperDistance, float upperPercentage,
   return responseCode;
 }
 
-// =====================================
 // Sensor error
-// =====================================
 
 void sendSensorError(const String &sensorName) {
   if (WiFi.status() != WL_CONNECTED) {
@@ -1024,25 +1016,38 @@ void sendSensorError(const String &sensorName) {
   http.end();
 }
 
-// =====================================
 // Serial output
-// =====================================
 
-void printReadings(float upperDistance, float upperPercentage,
-                   const String &upperStatus, float lowerDistance,
+void printReadings(float upperRawDistance, float upper_D_full,
+                   float upperUsableHeight, float upperWaterHeight,
+                   float upperPercentage, const String &upperStatus,
+                   float lowerRawDistance, float lowerCalibratedDistance,
+                   float lowerTankHeight, float lowerWaterHeight,
                    float lowerPercentage, const String &lowerStatus) {
   Serial.println();
   Serial.println("=================================");
 
-  Serial.print("Upper Tank | Distance: ");
-  Serial.print(upperDistance, 1);
-  Serial.print(" cm | Level: ");
+  Serial.print("Upper Tank | rawDistance: ");
+  Serial.print(upperRawDistance, 1);
+  Serial.print(" cm | D_full: ");
+  Serial.print(upper_D_full, 1);
+  Serial.print(" cm | usableHeight: ");
+  Serial.print(upperUsableHeight, 1);
+  Serial.print(" cm | waterHeight: ");
+  Serial.print(upperWaterHeight, 1);
+  Serial.print(" cm | percentage: ");
   Serial.print(upperPercentage, 1);
   Serial.print("% | Status: ");
   Serial.println(upperStatus);
 
-  Serial.print("Lower Tank | Distance: ");
-  Serial.print(lowerDistance, 1);
+  Serial.print("Lower Tank | Raw: ");
+  Serial.print(lowerRawDistance, 1);
+  Serial.print(" cm | Calibrated: ");
+  Serial.print(lowerCalibratedDistance, 1);
+  Serial.print(" cm | Tank Height: ");
+  Serial.print(lowerTankHeight, 1);
+  Serial.print(" cm | Water Height: ");
+  Serial.print(lowerWaterHeight, 1);
   Serial.print(" cm | Level: ");
   Serial.print(lowerPercentage, 1);
   Serial.print("% | Status: ");

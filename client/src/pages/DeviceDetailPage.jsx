@@ -1,10 +1,9 @@
 import { useCallback, useContext, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import useAsyncData from "../hooks/useAsyncData";
-import { ArrowLeft, Check, Eye, History, LoaderCircle, Pencil, Shield, Sliders, X } from "lucide-react";
+import { ArrowLeft, Check, Eye, LoaderCircle, Pencil, Shield, Sliders, X } from "lucide-react";
 import {
   CardSkeleton,
-  EmptyState,
   ErrorState,
 } from "../components/ui/StateViews";
 import { fetchDevice, fetchTelemetryHistory, renameDevice } from "../services/deviceApi";
@@ -17,8 +16,6 @@ import { getApiErrorMessage } from "../utils/apiError";
 import {
   formatPercentage,
   formatTimestamp,
-  formatVolume,
-  tankStatusKey,
 } from "../utils/telemetryFormat";
 
 export default function DeviceDetailPage() {
@@ -46,7 +43,6 @@ export default function DeviceDetailPage() {
   });
 
   const device = renamedDevice ?? data?.device ?? null;
-  const lastStored = data?.lastStoredReading ?? null;
   const recent = data?.recent ?? [];
 
   const telemetry = useContext(TelemetryContext);
@@ -274,100 +270,6 @@ export default function DeviceDetailPage() {
         device={device}
         onUpdated={setRenamedDevice}
       />
-
-      {/* Latest telemetry */}
-      <section className="rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
-        <h3 className="text-sm font-extrabold text-slate-900 dark:text-slate-100">
-          {t("latestTelemetry")}
-        </h3>
-
-        {lastStored ? (
-          <dl className="mt-4 grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
-            <DetailRow
-              label={t("upperTankLevel")}
-              value={formatPercentage(lastStored.upperTank?.percentage).text}
-              t={t}
-              missing={!formatPercentage(lastStored.upperTank?.percentage).hasValue}
-            />
-            <DetailRow
-              label={t("upperTankVolume")}
-              value={
-                formatVolume(lastStored.upperTank?.percentage, {
-                  capacityLiters: device?.tanks?.upper?.capacityLiters,
-                }).text
-              }
-              t={t}
-              missing={
-                !formatVolume(lastStored.upperTank?.percentage, {
-                  capacityLiters: device?.tanks?.upper?.capacityLiters,
-                }).hasValue
-              }
-            />
-            <DetailRow
-              label={t("lowerTankLevel")}
-              value={formatPercentage(lastStored.lowerTank?.percentage).text}
-              t={t}
-              missing={!formatPercentage(lastStored.lowerTank?.percentage).hasValue}
-            />
-            <DetailRow
-              label={t("lowerTankVolume")}
-              value={
-                formatVolume(lastStored.lowerTank?.percentage, {
-                  capacityLiters: device?.tanks?.lower?.capacityLiters,
-                }).text
-              }
-              t={t}
-              missing={
-                !formatVolume(lastStored.lowerTank?.percentage, {
-                  capacityLiters: device?.tanks?.lower?.capacityLiters,
-                }).hasValue
-              }
-            />
-            <DetailRow
-              label={t("upperSensor")}
-              value={
-                tankStatusKey(lastStored.upperTank?.tankStatus)
-                  ? t(tankStatusKey(lastStored.upperTank.tankStatus))
-                  : null
-              }
-              t={t}
-            />
-            <DetailRow
-              label={t("lowerSensor")}
-              value={
-                tankStatusKey(lastStored.lowerTank?.tankStatus)
-                  ? t(tankStatusKey(lastStored.lowerTank.tankStatus))
-                  : null
-              }
-              t={t}
-            />
-            <DetailRow
-              label={t("pumpState")}
-              value={
-                lastStored.pumpStatus
-                  ? lastStored.pumpStatus === "ON"
-                    ? t("on")
-                    : t("off")
-                  : null
-              }
-              t={t}
-            />
-            <DetailRow
-              label={t("timestamp")}
-              value={formatTimestamp(lastStored.receivedAt, { locale: language }).text}
-              t={t}
-            />
-          </dl>
-        ) : (
-          <div className="mt-4">
-            <EmptyState
-              icon={History}
-              title={t("noTelemetryTitle")}
-              description={t("noTelemetryDesc")}
-            />
-          </div>
-        )}
-      </section>
 
       {/* Recent history */}
       <section className="rounded-3xl border border-slate-200/80 bg-white/90 p-5 shadow-sm sm:p-6 dark:border-slate-800 dark:bg-slate-900/90">

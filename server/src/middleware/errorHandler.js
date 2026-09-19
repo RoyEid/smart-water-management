@@ -1,12 +1,3 @@
-/**
- * Every error response leaves through here in one shape:
- * { success: false, message, errors? }
- *
- * The stack is logged server-side always, and included in the response only
- * outside production — a user must never be shown internal paths or frames.
- */
-// eslint-disable-next-line no-unused-vars -- Express identifies error handlers
-// by arity: dropping `next` would turn this into ordinary middleware.
 export default function errorHandler(err, req, res, next) {
   const isProduction = process.env.NODE_ENV === "production";
   const statusCode = err.statusCode || err.status || 500;

@@ -48,6 +48,8 @@ export async function getDeviceControlStateAsync(deviceId = "tank-01") {
       ...base,
       upperTankHeightCm: device?.tanks?.upper?.heightCm ?? null,
       lowerTankHeightCm: device?.tanks?.lower?.heightCm ?? null,
+      upperSensorOffsetCm: device?.tanks?.upper?.sensorOffsetCm ?? 0,
+      lowerSensorOffsetCm: device?.tanks?.lower?.sensorOffsetCm ?? 0,
       upperCapacityLiters: device?.tanks?.upper?.capacityLiters ?? null,
       lowerCapacityLiters: device?.tanks?.lower?.capacityLiters ?? null,
     };
@@ -56,6 +58,8 @@ export async function getDeviceControlStateAsync(deviceId = "tank-01") {
       ...base,
       upperTankHeightCm: null,
       lowerTankHeightCm: null,
+      upperSensorOffsetCm: 0,
+      lowerSensorOffsetCm: 0,
       upperCapacityLiters: null,
       lowerCapacityLiters: null,
     };

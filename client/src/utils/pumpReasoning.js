@@ -4,8 +4,6 @@ import {
   PUMP_START_LOWER_MIN_LEVEL,
   PUMP_START_UPPER_LEVEL,
   PUMP_STOP_UPPER_LEVEL,
-  // Explicit extension so this module also resolves under plain Node, which
-  // runs the unit tests; Vite resolves it either way.
 } from "./telemetryFormat.js";
 import { calculateTankTransfer } from "./tankTransferMath.js";
 

@@ -17,6 +17,7 @@ const latestReadingsByDevice = new Map();
 function toTank(source, fallbackStatus) {
   return {
     distanceCm: Number(source?.distanceCm ?? 0),
+    rawDistanceCm: source?.rawDistanceCm != null ? Number(source.rawDistanceCm) : null,
     percentage: Number(source?.percentage ?? 0),
     waterHeightCm: Number(source?.waterHeightCm ?? 0),
     tankStatus: String(source?.tankStatus || fallbackStatus || "Normal"),

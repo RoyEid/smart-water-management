@@ -1,5 +1,4 @@
 import Alert from "../models/Alert.js";
-import Device from "../models/Device.js";
 import { getUserAccessibleDevices } from "../services/deviceAccessService.js";
 
 function serializeAlert(alert) {
